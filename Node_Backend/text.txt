@@ -1,0 +1,260 @@
+const mongoose = require("mongoose");
+
+const AdvertisementSchema = new mongoose.Schema({
+  company_name: { type: String, required: true },
+  title: { type: String, required: true },
+  content: { type: String, required: true },
+  image_url: { type: String },
+  link_url: { type: String },
+  status: { type: String, enum: ["Active", "Inactive"], default: "Active" },
+  created_at: { type: Date, default: Date.now },
+  duration: { type: Number, required: true }, // Duration in days
+});
+
+module.exports = mongoose.model("Advertisement", AdvertisementSchema);
+
+const mongoose = require("mongoose");
+
+const AnnouncementSchema = new mongoose.Schema({
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    title: { type: String, required: true },
+    message: { type: String, required: true },
+    type: { type: String, enum: ["General", "Maintenance", "Event"], required: true },
+    is_read: { type: Boolean, default: false },
+    created_at: { type: Date, default: Date.now },
+});
+
+module.exports = mongoose.model("Announcement", AnnouncementSchema);
+
+const mongoose = require("mongoose");
+
+const HelperSchema = new mongoose.Schema({
+  fullname: { type: String, required: true },
+  age: { type: Number },
+  phone: { type: String, required: true },
+  address: { type: String, required: true },
+  gender: { type: String, enum: ["Male", "Female"] },  
+    experience: { type: Number },
+    nric_number: { type: String, required: true },
+    nric_photo_url: { type: String },
+    status: { type: String, default: "Active" },
+    created_at: { type: Date, default: Date.now },
+});
+
+module.exports = mongoose.model("Helper", HelperSchema);
+
+const mongoose = require("mongoose");
+
+const HelperRequestSchema = new mongoose.Schema({
+  room_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Room",
+    required: true,
+  },
+  type: { type: String, required: true }, // e.g., "Cleaning", "Maintenance"
+  gender_preferred: {
+    type: String,
+    enum: ["Male", "Female", "No Preference"],
+    default: "No Preference",
+  },
+  status: {
+    type: String,
+    enum: ["Pending", "In Progress", "Completed"],
+    default: "Pending",
+  },
+  created_at: { type: Date, default: Date.now },
+});
+
+module.exports = mongoose.model("HelperRequest", HelperRequestSchema);
+
+const mongoose = require("mongoose");
+
+const NotificationSchema = new mongoose.Schema({
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  title: { type: String, required: true },
+  message: { type: String, required: true },
+  type: { type: String, enum: ["Report", "Visitor", "General"], required: true },
+  is_read: { type: Boolean, default: false },
+  created_at: { type: Date, default: Date.now },
+});
+
+module.exports = mongoose.model("Notification", NotificationSchema);
+
+const mongoose = require("mongoose");
+
+const ReportSchema = new mongoose.Schema({
+    title: { type: String, required: true },
+    message: { type: String, required: true },
+    type: { type: String, enum: ["Maintenance", "Security", "Other"], required: true },
+    location: { type: String, required: true },
+    status: { type: String, enum: ["Open", "In Progress", "Resolved"], default: "Open" },
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    created_at: { type: Date, default: Date.now },
+});
+
+module.exports = mongoose.model("Report", ReportSchema);
+
+const mongoose = require("mongoose");
+
+const ResParkingSchema = new mongoose.Schema({
+  room_id: { type: mongoose.Schema.Types.ObjectId, ref: "Room", required: true },
+  slot_number: { type: String, required: true },
+  status: { type: String, enum: ["Available", "Occupied", "Maintenance"], default: "Available" },
+});
+
+module.exports = mongoose.model("ResParking", ResParkingSchema);
+
+const mongoose = require("mongoose");
+
+const RoomSchema = new mongoose.Schema({
+  room_name: { type: String, required: true, unique: true },
+  floor: { type: Number, required: true },
+  room_type: { type: String, enum: ["Office", "Standard", "Premium"], required: true, default: "Standard" },
+  status: { type: String, enum: ["Available", "Occupied", "Maintenance"], default: "Available" },
+});
+
+module.exports = mongoose.model("Room", RoomSchema);
+
+const mongoose = require("mongoose");
+
+const ServiceBillSchema = new mongoose.Schema({
+    room_id: {type : mongoose.Schema.Types.ObjectId, ref: "Room", required: true},
+    amount: {type: Number, required: true},
+    status: {type: String, enum: ["Pending", "Paid", "Overdue"], default: "Pending"},
+    due_date: {type: Date, required: true},
+    created_at: {type: Date, default: Date.now},
+});
+
+module.exports = mongoose.model("ServiceBill", ServiceBillSchema);
+
+const mongoose = require("mongoose");
+
+const SosAlertSchema = new mongoose.Schema({
+  resident_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  room_id: { type: mongoose.Schema.Types.ObjectId, ref: "Room", required: true },
+  message: { type: String, required: true },
+  status: { type: String, enum: ["Active", "Resolved"], default: "Active" },
+  created_at: { type: Date, default: Date.now },
+  resolved_at: { type: Date },
+});
+
+module.exports = mongoose.model("SosAlert", SosAlertSchema);
+
+const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
+
+const UserSchema = new mongoose.Schema({
+  fullname: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  phone: { type: String, required: true },
+  password: { type: String, required: true },
+
+  role: {
+    type: String,
+    enum: ["Citizen", "Admin", "Staff", "Security"],
+    default: "Citizen",
+  },
+
+  created_at: { type: Date, default: Date.now },
+  room_id: { type: String },
+
+  otp: { type: String },
+  otpExpires: { type: Date },
+});
+
+UserSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
+
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+});
+
+module.exports = mongoose.model("User", UserSchema);
+
+const mongoose = require("mongoose");
+
+const VisitorSchema = new mongoose.Schema(
+  {
+    firstName: { type: String, trim: true, default: "" },
+    lastName: { type: String, trim: true, default: "" },
+    email: { type: String, trim: true, lowercase: true, default: "" },
+
+    fullname: { type: String, trim: true, default: "" },
+    phone: { type: String, required: true, trim: true },
+    nric_number: { type: String, trim: true, default: "" },
+    nric_photo_url: { type: String, default: "" },
+
+    company: { type: String, trim: true, default: "" },
+    hostName: { type: String, trim: true, default: "" },
+    target_room_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Room",
+      default: null,
+    },
+    purpose: {
+      type: String,
+      enum: [
+        "Meeting",
+        "Interview",
+        "Delivery",
+        "Event",
+        "Tour",
+        "Service",
+        "Other",
+        "General",
+        "",
+      ],
+      default: "Other",
+    },
+    reason_for_visit: { type: String, trim: true, default: "" }, // original field kept
+    purposeDetail: { type: String, trim: true, default: "" }, // alias for notes
+
+    parking_slot_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "VisCarParking",
+      default: null,
+    },
+
+    agreedToTerms: { type: Boolean, default: false },
+
+    badgeNumber: { type: String, default: "" },
+    check_in_time: { type: Date, default: Date.now },
+    check_out_time: { type: Date, default: null },
+    visitDate: { type: Date, default: Date.now },
+  },
+  { timestamps: true },
+);
+
+VisitorSchema.pre("save", function () {
+  if (this.firstName || this.lastName) {
+    this.fullname = `${this.firstName} ${this.lastName}`.trim();
+  } else if (this.fullname && !this.firstName) {
+    const parts = this.fullname.split(" ");
+    this.firstName = parts[0] || "";
+    this.lastName = parts.slice(1).join(" ") || "";
+  }
+
+  if (this.purposeDetail && !this.reason_for_visit) {
+    this.reason_for_visit = this.purposeDetail;
+  } else if (this.reason_for_visit && !this.purposeDetail) {
+    this.purposeDetail = this.reason_for_visit;
+  }
+
+  if (this.isNew && !this.badgeNumber) {
+    const d = new Date();
+    const prefix = `V${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    const uniqueSuffix = String(this._id).slice(-6).toUpperCase();
+    this.badgeNumber = `${prefix}-${uniqueSuffix}`;
+  }
+});
+
+module.exports = mongoose.model("Visitor", VisitorSchema);
+
+const mongoose = require("mongoose");
+
+const VisParkingSchema = new mongoose.Schema({
+  slot_number: { type: String, required: true },
+  status: { type: String, enum: ["Available", "Occupied", "Maintenance"], default: "Available" },
+});
+
+module.exports = mongoose.model("VisParking", VisParkingSchema);

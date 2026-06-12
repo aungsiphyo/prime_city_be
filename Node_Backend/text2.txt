@@ -1,0 +1,721 @@
+const express = require("express");
+const router = express.Router();
+
+const protect = require("../middleware/authMiddleware");
+const authorizeRoles = require("../middleware/roleMiddleware");
+const User = require("../models/User");
+
+router.get("/users", protect, authorizeRoles("Admin"), async (req, res) => {
+  try {
+    const users = await User.find().select("-password");
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete(
+  "/users/:id",
+  protect,
+  authorizeRoles("Admin"),
+  async (req, res) => {
+    try {
+      await User.findByIdAndDelete(req.params.id);
+      res.json({ message: "User deleted" });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+);
+
+router.put(
+  "/users/:id/role",
+  protect,
+  authorizeRoles("Admin"),
+  async (req, res) => {
+    try {
+      const { role } = req.body;
+
+      const user = await User.findById(req.params.id);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      user.role = role;
+      await user.save();
+
+      res.json({ message: "Role updated", user });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+);
+
+module.exports = router;
+
+const express = require("express");
+const router = express.Router();
+const Announcement = require("../models/Announcement");
+
+router.post("/", async (req, res) => {
+  try {
+    const { user_id, title, message, type } = req.body;
+
+    const announcement = await Announcement.create({
+      user_id,
+      title,
+      message,
+      type,
+    });
+
+    const io = req.app.get("io");
+
+    io.emit("announcement", announcement);
+
+    res.json({ message: "Announcement created", announcement });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
+
+const express = require("express");
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+const User = require("../models/User");
+const sendEmail = require("../utils/sendEmail");
+
+const router = express.Router();
+
+const generateTokens = (user) => {
+  const accessToken = jwt.sign(
+    { id: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: "15m" },
+  );
+
+  const refreshToken = jwt.sign({ id: user._id }, process.env.REFRESH_SECRET, {
+    expiresIn: "7d",
+  });
+
+  return { accessToken, refreshToken };
+};
+
+// ================= SIGNUP =================
+router.post("/signup", async (req, res) => {
+  try {
+    const { fullname, email, phone, password, role, room_id } = req.body;
+
+    const userExists = await User.findOne({ $or: [{ email }, { phone }] });
+    if (userExists) {
+      return res.status(400).json({ message: "User already exists" });
+    }
+
+    const newUser = new User({
+      fullname,
+      email,
+      phone,
+      password,
+      role,
+      room_id,
+    });
+    await newUser.save();
+
+    res.status(201).json({ message: "Register success" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= LOGIN STEP 1 =================
+router.post("/login/step1", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!password || !email) {
+      return res
+        .status(400)
+        .json({ message: "Email and password are required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ message: "User not found" });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Wrong password" });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.otp = otp;
+    user.otpExpires = Date.now() + 5 * 60 * 1000;
+    await user.save();
+
+    try {
+      // 📧 Email ပို့ဆောင်ခြင်း
+      await sendEmail(email, otp);
+      console.log(`✅ OTP sent to ${email}`);
+
+      res.status(200).json({
+        message: "OTP sent to your registered email",
+      });
+    } catch (mailErr) {
+      console.error(`Failed to send OTP to ${email}:`, mailErr);
+      res
+        .status(500)
+        .json({ message: "Failed to send Email OTP. Please try again." });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= LOGIN STEP 2 =================
+router.post("/login/step2", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    const user = await User.findOne({
+      email,
+      otp,
+      otpExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
+    }
+
+    const { accessToken, refreshToken } = generateTokens(user);
+
+    user.refreshToken = refreshToken;
+    user.otp = undefined;
+    user.otpExpires = undefined;
+
+    await user.save();
+
+    res.status(200).json({
+      accessToken,
+      refreshToken,
+      user: {
+        id: user._id,
+        fullname: user.fullname,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= FORGOT PASSWORD STEP 1 =================
+router.post("/forgot-password/step1", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.otp = otp;
+    user.otpExpires = Date.now() + 5 * 60 * 1000;
+    await user.save();
+
+    try {
+      await sendEmail(email, otp);
+      console.log(`🔐 Forgot OTP sent to ${email}: ${otp}`);
+      res.status(200).json({ message: "OTP sent to your email" });
+    } catch (mailErr) {
+      res
+        .status(500)
+        .json({ message: "Failed to send email. Please try again." });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= FORGOT PASSWORD STEP 2 =================
+router.post("/forgot-password/step2", async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    const user = await User.findOne({
+      email,
+      otp,
+      otpExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired OTP" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    user.otp = undefined;
+    user.otpExpires = undefined;
+
+    await user.save();
+
+    res.status(200).json({ message: "Password updated successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= REFRESH TOKEN & LOGOUT =================
+router.post("/refresh-token", async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken)
+      return res.status(401).json({ message: "Refresh token required" });
+
+    const user = await User.findOne({ refreshToken });
+    if (!user)
+      return res.status(403).json({ message: "Invalid refresh token" });
+
+    jwt.verify(refreshToken, process.env.REFRESH_SECRET, (err, decoded) => {
+      if (err)
+        return res
+          .status(403)
+          .json({ message: "Expired or invalid refresh token" });
+
+      const accessToken = jwt.sign(
+        { id: user._id, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: "15m" },
+      );
+      res.json({ accessToken });
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/logout", async (req, res) => {
+  try {
+    const { email } = req.body;
+    await User.findOneAndUpdate({ email }, { refreshToken: undefined });
+    res.status(200).json({ message: "Logged out successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
+
+const express = require("express");
+const router = express.Router();
+const HelperRequest = require("../models/HelperRequest");
+
+router.post("/", async (req, res) => {
+  try {
+    const request = await HelperRequest.create(req.body);
+
+    const io = req.app.get("io");
+
+    io.emit("helper_request", request);
+
+    res.json({ message: "Helper requested", request });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put("/:id", async (req, res) => {
+  try {
+    const request = await HelperRequest.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true },
+    );
+
+    const io = req.app.get("io");
+
+    io.emit("helper_request", request);
+
+    res.json({ message: "Request updated", request });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
+
+const express = require("express");
+const router = express.Router();
+const Notification = require("../models/Notification");
+
+router.post("/send", async (req, res) => {
+  try {
+    const { user_id, title, message, type } = req.body;
+
+    const noti = await Notification.create({
+      user_id,
+      title,
+      message,
+      type,
+    });
+
+    const io = req.app.get("io");
+    const users = req.app.get("onlineUsers");
+
+    const socketId = users[user_id];
+
+    if (socketId) {
+      io.to(socketId).emit("notification", noti);
+    }
+
+    res.json({ message: "Notification sent", noti });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
+
+const express = require("express");
+const router = express.Router();
+const ResParking = require("../models/ResParking");
+
+// OPTIONAL manual API
+router.put("/:id", async (req, res) => {
+  try {
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ error: "status required" });
+    }
+
+    const parking = await ResParking.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true },
+    );
+
+    if (!parking) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    res.json({
+      success: true,
+      message: "Updated (MQTT handles realtime)",
+      data: parking,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
+
+const express = require("express");
+const router = express.Router();
+
+const protect = require("../middleware/authMiddleware");
+const authorizeRoles = require("../middleware/roleMiddleware");
+
+router.get("/profile", protect, (req, res) => {
+  res.json({
+    message: "Profile access granted",
+    user: req.user,
+  });
+});
+
+router.get("/admin", protect, authorizeRoles("Admin"), (req, res) => {
+  res.json({ message: "Welcome Admin" });
+});
+
+router.get("/staff", protect, authorizeRoles("Staff", "Admin"), (req, res) => {
+  res.json({ message: "Welcome Staff/Admin" });
+});
+
+module.exports = router;
+
+const express = require("express");
+const router = express.Router();
+const Report = require("../models/Report");
+
+router.post("/", async (req, res) => {
+  try {
+    const report = await Report.create(req.body);
+
+    const io = req.app.get("io");
+
+    io.emit("report_update", report);
+
+    res.json({ message: "Report submitted", report });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put("/:id", async (req, res) => {
+  try {
+    const report = await Report.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+    });
+
+    const io = req.app.get("io");
+
+    io.emit("report_update", report);
+
+    res.json({ message: "Report updated", report });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
+
+const express = require("express");
+const router = express.Router();
+const ServiceBill = require("../models/ServiceBill");
+
+router.post("/", async (req, res) => {
+  try {
+    const bill = await ServiceBill.create(req.body);
+
+    const io = req.app.get("io");
+
+    io.emit("bill_update", bill);
+
+    res.json({ message: "Bill created", bill });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put("/:id", async (req, res) => {
+  try {
+    const bill = await ServiceBill.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+    });
+
+    const io = req.app.get("io");
+
+    io.emit("bill_update", bill);
+
+    res.json({ message: "Bill updated", bill });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
+
+const express = require("express");
+const router = express.Router();
+const SosAlert = require("../models/SosAlert");
+
+// OPTIONAL: manual trigger API (admin only)
+router.post("/", async (req, res) => {
+  try {
+    const { resident_id, room_id, message } = req.body;
+
+    if (!resident_id || !room_id || !message) {
+      return res.status(400).json({ error: "Missing fields" });
+    }
+
+    const sos = await SosAlert.create({
+      resident_id,
+      room_id,
+      message,
+    });
+
+    res.json({
+      success: true,
+      message: "Saved (MQTT handles realtime)",
+      data: sos,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
+
+const express = require("express");
+const router = express.Router();
+const Visitor = require("../models/Visitor");
+
+function cleanText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function broadcastSSE(req, event, data) {
+  const sseClients = req.app.get("sseClients") || new Map();
+  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+
+  for (const client of sseClients.values()) {
+    try {
+      if (client.req.destroyed || client.res.writableEnded) {
+        client.cleanup?.();
+        continue;
+      }
+
+      client.res.write(msg);
+      if (client.res.flush) client.res.flush();
+    } catch (err) {
+      console.error("SSE Broadcast Error:", err.message);
+      client.cleanup?.();
+    }
+  }
+}
+
+router.post("/register", async (req, res) => {
+  try {
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      company,
+      hostName,
+      purpose,
+      purposeDetail,
+      agreedToTerms,
+    } = req.body;
+
+    const normalized = {
+      firstName: cleanText(firstName),
+      lastName: cleanText(lastName),
+      email: cleanText(email).toLowerCase(),
+      phone: cleanText(phone),
+      company: cleanText(company),
+      hostName: cleanText(hostName),
+      purpose: cleanText(purpose) || "Other",
+      purposeDetail: cleanText(purposeDetail),
+      agreedToTerms: Boolean(agreedToTerms),
+    };
+
+    if (
+      !normalized.firstName ||
+      !normalized.lastName ||
+      !normalized.email ||
+      !normalized.phone ||
+      !normalized.hostName ||
+      !normalized.purpose
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "First name, last name, email, phone, host name, and purpose are required.",
+      });
+    }
+
+    if (!/^\S+@\S+\.\S+$/.test(normalized.email)) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid email address is required.",
+      });
+    }
+
+    if (!normalized.agreedToTerms) {
+      return res.status(400).json({
+        success: false,
+        message: "You must agree to the terms before registering.",
+      });
+    }
+
+    const visitor = new Visitor({
+      firstName: normalized.firstName,
+      lastName: normalized.lastName,
+      email: normalized.email,
+      phone: normalized.phone,
+      company: normalized.company,
+      hostName: normalized.hostName,
+      purpose: normalized.purpose,
+      purposeDetail: normalized.purposeDetail,
+      agreedToTerms: normalized.agreedToTerms,
+      reason_for_visit: normalized.purposeDetail,
+    });
+
+    await visitor.save();
+
+    console.log(
+      `📋 Visitor Registered: ${visitor.fullname} [${visitor.badgeNumber}]`,
+    );
+
+    // 1. Notify Laptop Display (SSE)
+    broadcastSSE(req, "registered", {
+      name: visitor.fullname,
+      badge: visitor.badgeNumber,
+    });
+
+    // 2. Notify Admin Dashboard (Socket.IO)
+    const io = req.app.get("io");
+    if (io) {
+      const payload = {
+        name: visitor.fullname,
+        badge: visitor.badgeNumber,
+        time: new Date().toISOString(),
+      };
+      io.emit("visitor:registered", payload);
+      io.emit("visitor_checkin", visitor);
+    }
+
+    // Success Response (Do NOT call next() here)
+    return res.status(201).json({
+      success: true,
+      message: "Registration successful!",
+      data: {
+        badgeNumber: visitor.badgeNumber,
+        name: visitor.fullname,
+        id: visitor._id,
+      },
+    });
+  } catch (err) {
+    console.error("Registration Server Error:", err);
+
+    if (err.name === "ValidationError") {
+      const msgs = Object.values(err.errors).map((e) => e.message);
+      return res.status(400).json({ success: false, message: msgs.join(". ") });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error: " + err.message,
+    });
+  }
+});
+
+router.get("/", async (req, res) => {
+  try {
+    const { date, page = 1, limit = 50 } = req.query;
+    const filter = {};
+
+    if (date) {
+      const start = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(date);
+      end.setHours(23, 59, 59, 999);
+      filter.createdAt = { $gte: start, $lte: end };
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [visitors, total] = await Promise.all([
+      Visitor.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit)),
+      Visitor.countDocuments(filter),
+    ]);
+
+    res.json({
+      success: true,
+      data: visitors,
+      pagination: {
+        total,
+        page: Number(page),
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+module.exports = router;

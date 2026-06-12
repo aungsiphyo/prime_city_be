@@ -1,0 +1,439 @@
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+#include <ESP32Servo.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// ================= WIFI =================
+const char* ssid = "Redmi Note 13 Pro";
+const char* password = "11111111";
+
+// ================= MQTT =================
+const char* mqtt_server = "18ae47c8570f47e183ae798b2758364f.s1.eu.hivemq.cloud";
+const int mqtt_port = 8883;
+const char* mqtt_user = "smartSOS";
+const char* mqtt_pass = "Password123";
+
+const char* topic_parking = "parking/update";
+const char* topic_alert = "sos/alert";
+
+// ================= PINS =================
+#define VIS_R1 14
+#define VIS_R2 27
+#define VIS_SERVO_PIN 18
+
+#define RES_R3 26
+#define RES_R4 25
+#define RES_SERVO_PIN 19
+
+#define SOS_BUTTON_PIN 13
+#define BUZZER_PIN 12
+
+// ================= LCD =================
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+
+// ================= SERVO =================
+Servo visitorServo;
+Servo residentServo;
+
+const int GATE_OPEN_ANGLE = 90;
+const int GATE_CLOSE_ANGLE = 180;
+const unsigned long GATE_CLOSE_DELAY = 1500;
+
+// ================= CLIENT =================
+WiFiClientSecure espClient;
+PubSubClient client(espClient);
+
+// ================= STATE =================
+bool sosSent = false;
+
+bool visitorProcessing = false;
+bool residentProcessing = false;
+
+int visitorState = 0;
+int residentState = 0;
+
+unsigned long visitorStartTime = 0;
+unsigned long residentStartTime = 0;
+
+unsigned long lastVisitorEvent = 0;
+unsigned long lastResidentEvent = 0;
+
+const unsigned long SENSOR_TIMEOUT = 5000;
+const unsigned long EVENT_COOLDOWN = 1500;
+
+// ================= LCD FUNCTIONS =================
+void showLCD(String line1, String line2 = "", String line3 = "", String line4 = "") {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(line1);
+  lcd.setCursor(0, 1);
+  lcd.print(line2);
+  lcd.setCursor(0, 2);
+  lcd.print(line3);
+  lcd.setCursor(0, 3);
+  lcd.print(line4);
+}
+
+void showDefaultLCD() {
+  showLCD("Car Parking", "System Ready", "Visitor & Resident", "Smart City");
+}
+
+void closeVisitorGate() {
+  delay(GATE_CLOSE_DELAY);
+  visitorServo.write(GATE_CLOSE_ANGLE);
+}
+
+void closeResidentGate() {
+  delay(GATE_CLOSE_DELAY);
+  residentServo.write(GATE_CLOSE_ANGLE);
+}
+
+// ================= WIFI =================
+void setupWiFi() {
+  Serial.print("Connecting WiFi");
+
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println();
+  Serial.println("✅ WiFi Connected");
+  Serial.print("IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+// ================= MQTT =================
+void reconnectMQTT() {
+  while (!client.connected()) {
+    Serial.print("Connecting MQTT... ");
+
+    String clientId = "esp32_parking_" + String(random(0xffff), HEX);
+
+    if (client.connect(clientId.c_str(), mqtt_user, mqtt_pass)) {
+      Serial.println("✅ Connected");
+    } else {
+      Serial.print("❌ Failed, rc=");
+      Serial.println(client.state());
+      delay(2000);
+    }
+  }
+}
+
+// ================= SENSOR =================
+bool detected(int pin) {
+  if (digitalRead(pin) == LOW) {
+    delay(60);
+    return digitalRead(pin) == LOW;
+  }
+  return false;
+}
+
+void waitRelease(int pin) {
+  unsigned long start = millis();
+
+  while (digitalRead(pin) == LOW) {
+    delay(10);
+    if (millis() - start > 3000) break;
+  }
+}
+
+void waitBothRelease(int pin1, int pin2) {
+  unsigned long start = millis();
+
+  while (digitalRead(pin1) == LOW || digitalRead(pin2) == LOW) {
+    delay(10);
+    if (millis() - start > 3000) break;
+  }
+}
+
+// ================= MQTT PUBLISH =================
+void publishParkingDelta(const char* type, int delta) {
+  StaticJsonDocument<128> doc;
+
+  doc["type"] = type;
+  doc["delta"] = delta;
+
+  char buffer[128];
+  serializeJson(doc, buffer);
+
+  bool ok = client.publish(topic_parking, buffer);
+
+  Serial.print("Parking MQTT Send: ");
+  Serial.println(buffer);
+
+  if (ok) Serial.println("✅ Parking published");
+  else Serial.println("❌ Parking publish failed");
+}
+
+void publishSOS() {
+  StaticJsonDocument<128> doc;
+
+  doc["status"] = "SOS_ACTIVE";
+  doc["source"] = "ESP32";
+  doc["message"] = "Emergency button pressed";
+
+  char buffer[128];
+  serializeJson(doc, buffer);
+
+  client.publish(topic_alert, buffer);
+
+  Serial.print("SOS MQTT Send: ");
+  Serial.println(buffer);
+}
+
+// ================= VISITOR PARKING =================
+// Entry: R1 -> R2 = delta +1
+// Exit : R2 -> R1 = delta -1
+void handleVisitorParking() {
+  bool r1 = detected(VIS_R1);
+  bool r2 = detected(VIS_R2);
+
+  if (!visitorProcessing && millis() - lastVisitorEvent > EVENT_COOLDOWN) {
+    if (r1 && !r2) {
+      visitorProcessing = true;
+      visitorState = 1;
+      visitorStartTime = millis();
+
+      visitorServo.write(GATE_OPEN_ANGLE);
+      showLCD("Welcome Visitor", "Gate Opening...", "Please Enter", "");
+      Serial.println("🚗 Visitor ENTRY start: R1 detected, gate open");
+
+      waitRelease(VIS_R1);
+    } 
+    else if (r2 && !r1) {
+      visitorProcessing = true;
+      visitorState = 2;
+      visitorStartTime = millis();
+
+      visitorServo.write(GATE_OPEN_ANGLE);
+      showLCD("Visitor Exit", "Gate Opening...", "Drive Safely", "");
+      Serial.println("🚗 Visitor EXIT start: R2 detected, gate open");
+
+      waitRelease(VIS_R2);
+    }
+  }
+
+  if (!visitorProcessing) return;
+
+  if (millis() - visitorStartTime > SENSOR_TIMEOUT) {
+    Serial.println("⚠️ Visitor timeout, gate close");
+
+    showLCD("Visitor Timeout", "Gate Closing...", "", "");
+    closeVisitorGate();
+
+    visitorProcessing = false;
+    visitorState = 0;
+    lastVisitorEvent = millis();
+
+    waitBothRelease(VIS_R1, VIS_R2);
+    showDefaultLCD();
+    return;
+  }
+
+  if (visitorState == 1 && detected(VIS_R2)) {
+    publishParkingDelta("visitor", 1);
+
+    showLCD("Welcome Visitor", "Entry Complete", "Gate Closing...", "");
+    Serial.println("✅ Visitor ENTRY complete, gate close");
+
+    closeVisitorGate();
+    waitBothRelease(VIS_R1, VIS_R2);
+
+    visitorProcessing = false;
+    visitorState = 0;
+    lastVisitorEvent = millis();
+
+    showDefaultLCD();
+  }
+
+  if (visitorState == 2 && detected(VIS_R1)) {
+    publishParkingDelta("visitor", -1);
+
+    showLCD("Thank You Visitor", "Exit Complete", "Gate Closing...", "");
+    Serial.println("✅ Visitor EXIT complete, gate close");
+
+    closeVisitorGate();
+    waitBothRelease(VIS_R1, VIS_R2);
+
+    visitorProcessing = false;
+    visitorState = 0;
+    lastVisitorEvent = millis();
+
+    showDefaultLCD();
+  }
+}
+
+// ================= RESIDENT PARKING =================
+// Entry: R3 -> R4 = delta +1
+// Exit : R4 -> R3 = delta -1
+void handleResidentParking() {
+  bool r3 = detected(RES_R3);
+  bool r4 = detected(RES_R4);
+
+  if (!residentProcessing && millis() - lastResidentEvent > EVENT_COOLDOWN) {
+    if (r3 && !r4) {
+      residentProcessing = true;
+      residentState = 1;
+      residentStartTime = millis();
+
+      residentServo.write(GATE_OPEN_ANGLE);
+      showLCD("Welcome", "Residential", "Gate Opening...", "Please Enter");
+      Serial.println("🏘️ Resident ENTRY start: R3 detected, gate open");
+
+      waitRelease(RES_R3);
+    } 
+    else if (r4 && !r3) {
+      residentProcessing = true;
+      residentState = 2;
+      residentStartTime = millis();
+
+      residentServo.write(GATE_OPEN_ANGLE);
+      showLCD("Resident Exit", "Gate Opening...", "Drive Safely", "");
+      Serial.println("🏘️ Resident EXIT start: R4 detected, gate open");
+
+      waitRelease(RES_R4);
+    }
+  }
+
+  if (!residentProcessing) return;
+
+  if (millis() - residentStartTime > SENSOR_TIMEOUT) {
+    Serial.println("⚠️ Resident timeout, gate close");
+
+    showLCD("Resident Timeout", "Gate Closing...", "", "");
+    closeResidentGate();
+
+    residentProcessing = false;
+    residentState = 0;
+    lastResidentEvent = millis();
+
+    waitBothRelease(RES_R3, RES_R4);
+    showDefaultLCD();
+    return;
+  }
+
+  if (residentState == 1 && detected(RES_R4)) {
+    publishParkingDelta("resident", 1);
+
+    showLCD("Welcome", "Residential", "Entry Complete", "Gate Closing...");
+    Serial.println("✅ Resident ENTRY complete, gate close");
+
+    closeResidentGate();
+    waitBothRelease(RES_R3, RES_R4);
+
+    residentProcessing = false;
+    residentState = 0;
+    lastResidentEvent = millis();
+
+    showDefaultLCD();
+  }
+
+  if (residentState == 2 && detected(RES_R3)) {
+    publishParkingDelta("resident", -1);
+
+    showLCD("Thank You", "Residential", "Exit Complete", "Gate Closing...");
+    Serial.println("✅ Resident EXIT complete, gate close");
+
+    closeResidentGate();
+    waitBothRelease(RES_R3, RES_R4);
+
+    residentProcessing = false;
+    residentState = 0;
+    lastResidentEvent = millis();
+
+    showDefaultLCD();
+  }
+}
+
+// ================= SOS =================
+void handleSOS() {
+  if (digitalRead(SOS_BUTTON_PIN) == LOW) {
+    digitalWrite(BUZZER_PIN, HIGH);
+
+    if (!sosSent) {
+      publishSOS();
+      sosSent = true;
+      showLCD("SOS ALERT!", "Emergency Button", "Pressed", "");
+      Serial.println("🚨 SOS SENT");
+    }
+  } else {
+    digitalWrite(BUZZER_PIN, LOW);
+    sosSent = false;
+  }
+}
+
+// ================= DEBUG =================
+void printSensorDebug() {
+  static unsigned long lastPrint = 0;
+
+  if (millis() - lastPrint >= 1000) {
+    lastPrint = millis();
+
+    Serial.print("R1=");
+    Serial.print(digitalRead(VIS_R1));
+    Serial.print(" R2=");
+    Serial.print(digitalRead(VIS_R2));
+    Serial.print(" R3=");
+    Serial.print(digitalRead(RES_R3));
+    Serial.print(" R4=");
+    Serial.println(digitalRead(RES_R4));
+  }
+}
+
+// ================= SETUP =================
+void setup() {
+  Serial.begin(115200);
+
+  Wire.begin(21, 22);
+
+  lcd.init();
+  lcd.backlight();
+  showLCD("Car Parking", "Starting System...", "", "");
+
+  pinMode(VIS_R1, INPUT_PULLUP);
+  pinMode(VIS_R2, INPUT_PULLUP);
+  pinMode(RES_R3, INPUT_PULLUP);
+  pinMode(RES_R4, INPUT_PULLUP);
+
+  pinMode(SOS_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  visitorServo.setPeriodHertz(50);
+  residentServo.setPeriodHertz(50);
+
+  visitorServo.attach(VIS_SERVO_PIN, 500, 2400);
+  residentServo.attach(RES_SERVO_PIN, 500, 2400);
+
+  visitorServo.write(GATE_CLOSE_ANGLE);
+  residentServo.write(GATE_CLOSE_ANGLE);
+
+  setupWiFi();
+
+  espClient.setInsecure();
+  client.setServer(mqtt_server, mqtt_port);
+
+  reconnectMQTT();
+
+  showDefaultLCD();
+  Serial.println("✅ ESP32 Parking System Ready");
+}
+
+// ================= LOOP =================
+void loop() {
+  if (!client.connected()) {
+    reconnectMQTT();
+  }
+
+  client.loop();
+
+  printSensorDebug();
+  handleSOS();
+  handleVisitorParking();
+  handleResidentParking();
+}
