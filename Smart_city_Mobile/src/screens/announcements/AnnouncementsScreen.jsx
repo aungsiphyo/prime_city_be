@@ -52,6 +52,7 @@ export default function AnnouncementsScreen({ navigation }) {
         })),
       );
     } catch (err) {
+      if (err.sessionExpired) return;
       setError(err.message || 'Failed to load announcements');
     } finally {
       setLoading(false);

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { getAccessToken, clearTokens } from '../api/client';
+import { getAccessToken, clearTokens, setOnSessionExpired } from '../api/client';
 import { logout as apiLogout } from '../api/auth';
 
 const AuthContext = createContext(null);
@@ -7,6 +7,11 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    setOnSessionExpired(() => setUser(null));
+    return () => setOnSessionExpired(null);
+  }, []);
 
   useEffect(() => {
     getAccessToken()

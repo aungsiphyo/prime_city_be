@@ -4,6 +4,12 @@ import { API_BASE_URL } from '../config/api';
 const ACCESS_TOKEN_KEY = 'accessToken';
 const REFRESH_TOKEN_KEY = 'refreshToken';
 
+let onSessionExpired = null;
+
+export function setOnSessionExpired(handler) {
+  onSessionExpired = handler;
+}
+
 export async function getAccessToken() {
   return AsyncStorage.getItem(ACCESS_TOKEN_KEY);
 }
@@ -20,7 +26,10 @@ export async function setTokens({ accessToken, refreshToken }) {
 }
 
 export async function clearTokens() {
-  await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY]);
+  await Promise.all([
+    AsyncStorage.removeItem(ACCESS_TOKEN_KEY),
+    AsyncStorage.removeItem(REFRESH_TOKEN_KEY),
+  ]);
 }
 
 async function refreshAccessToken() {
@@ -60,6 +69,11 @@ export async function apiRequest(path, { method = 'GET', body, auth = false, ret
       return apiRequest(path, { method, body, auth, retry: false });
     }
     await clearTokens();
+    onSessionExpired?.();
+    const err = new Error('Session expired. Please sign in again.');
+    err.status = 401;
+    err.sessionExpired = true;
+    throw err;
   }
 
   const data = await res.json().catch(() => ({}));

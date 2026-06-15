@@ -49,6 +49,7 @@ export default function ProfileScreen({ navigation }) {
       const user = await fetchProfile();
       setProfile(user);
     } catch (err) {
+      if (err.sessionExpired) return;
       setError(err.message || 'Failed to load profile');
     } finally {
       setLoading(false);
