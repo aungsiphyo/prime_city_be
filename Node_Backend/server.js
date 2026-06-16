@@ -234,6 +234,7 @@ app.use("/api/helpers", require("./src/routes/helper"));
 app.use("/api/bills", require("./src/routes/serviceBill"));
 app.use("/api/visitors", require("./src/routes/visitor"));
 app.use("/api/ai", require("./src/routes/ai.routes"));
+app.use("/api/mcp", require("./src/routes/mcp.routes"));
 
 app.get("/display", (req, res) =>
   res.sendFile(path.join(__dirname, "public", "display.html")),

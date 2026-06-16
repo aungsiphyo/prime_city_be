@@ -18,6 +18,7 @@ const UserSchema = new mongoose.Schema({
 
   otp: { type: String },
   otpExpires: { type: Date },
+  refreshTokens: [{ type: String }],
 });
 
 UserSchema.pre("save", async function () {

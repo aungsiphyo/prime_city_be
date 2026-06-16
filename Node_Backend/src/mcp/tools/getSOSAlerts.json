@@ -1,0 +1,8 @@
+{
+  "name": "getSOSAlerts",
+  "description": "Retrieve recent SOS alerts",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}

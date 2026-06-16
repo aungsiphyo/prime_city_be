@@ -107,8 +107,11 @@ router.post("/login/step2", async (req, res) => {
     }
 
     const { accessToken, refreshToken } = generateTokens(user);
-
-    user.refreshToken = refreshToken;
+    // store refresh token in an array to support multiple sessions/devices
+    user.refreshTokens = Array.isArray(user.refreshTokens)
+      ? user.refreshTokens
+      : [];
+    user.refreshTokens.push(refreshToken);
     user.otp = undefined;
     user.otpExpires = undefined;
 
@@ -192,23 +195,36 @@ router.post("/refresh-token", async (req, res) => {
     if (!refreshToken)
       return res.status(401).json({ message: "Refresh token required" });
 
-    const user = await User.findOne({ refreshToken });
+    // verify signature first to get the user id
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.REFRESH_SECRET);
+    } catch (err) {
+      return res
+        .status(403)
+        .json({ message: "Expired or invalid refresh token" });
+    }
+
+    const user = await User.findById(decoded.id);
     if (!user)
       return res.status(403).json({ message: "Invalid refresh token" });
 
-    jwt.verify(refreshToken, process.env.REFRESH_SECRET, (err, decoded) => {
-      if (err)
-        return res
-          .status(403)
-          .json({ message: "Expired or invalid refresh token" });
+    // ensure the provided refresh token is recorded for this user
+    const tokens = Array.isArray(user.refreshTokens) ? user.refreshTokens : [];
+    if (!tokens.includes(refreshToken)) {
+      return res.status(403).json({ message: "Invalid refresh token" });
+    }
 
-      const accessToken = jwt.sign(
-        { id: user._id, role: user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: "15m" },
-      );
-      res.json({ accessToken });
-    });
+    const accessToken = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "15m",
+      },
+    );
+
+    // Optionally: rotate refresh token here by issuing a new refresh token and replacing it in DB.
+    res.json({ accessToken });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -216,8 +232,18 @@ router.post("/refresh-token", async (req, res) => {
 
 router.post("/logout", async (req, res) => {
   try {
-    const { email } = req.body;
-    await User.findOneAndUpdate({ email }, { refreshToken: undefined });
+    const { email, refreshToken } = req.body;
+    if (refreshToken) {
+      // remove only the provided token
+      await User.updateOne(
+        { refreshTokens: refreshToken },
+        { $pull: { refreshTokens: refreshToken } },
+      );
+    } else if (email) {
+      // clear all tokens for this email (logout everywhere)
+      await User.findOneAndUpdate({ email }, { $set: { refreshTokens: [] } });
+    }
+
     res.status(200).json({ message: "Logged out successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });

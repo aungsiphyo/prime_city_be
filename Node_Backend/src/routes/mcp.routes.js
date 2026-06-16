@@ -1,8 +1,8 @@
 const express = require("express");
-const { postChat } = require("../controllers/ai.controller");
-
 const router = express.Router();
 
-router.post("/chat", postChat);
+const { getTools } = require("../controllers/mcp.controller");
+
+router.get("/tools", getTools);
 
 module.exports = router;

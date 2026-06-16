@@ -8,7 +8,7 @@ const User = require("../models/User");
 router.get("/profile", protect, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select(
-      "-password -otp -otpExpires -refreshToken",
+      "-password -otp -otpExpires -refreshTokens",
     );
 
     if (!user) {

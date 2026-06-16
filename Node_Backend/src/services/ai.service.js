@@ -1,23 +1,34 @@
 const crypto = require("crypto");
+const { getToolSchemas } = require("./toolRegistry");
+const { runTool } = require("./aiTools.service");
 
-const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || "http://localhost:11434").replace(
-  /\/+$/,
-  "",
-);
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
+const OLLAMA_BASE_URL = (
+  process.env.OLLAMA_BASE_URL || "http://localhost:11434"
+).replace(/\/+$/, "");
+
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:12b";
 const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS || 60000);
 
 const SYSTEM_PROMPT =
   process.env.AI_SYSTEM_PROMPT ||
-  "You are SmartRes AI, a helpful assistant for residents of a smart residential community. " +
-    "Answer clearly and concisely about bills, parking, visitors, announcements, and community services.";
+  `
+You are SmartRes AI, a helpful assistant for a smart residential community.
 
-function createMessage(role, content) {
+Rules:
+- Reply in Myanmar language unless the user uses English.
+- You can help with parking, rooms, bills, visitors, SOS, announcements, and community services.
+- Never expose private data.
+- Use tools when database data is needed.
+- If data is missing, say you cannot find it.
+`;
+
+function createMessage(role, content, extras = {}) {
   return {
     id: crypto.randomUUID(),
     role,
     content,
     timestamp: new Date().toISOString(),
+    ...extras,
   };
 }
 
@@ -29,7 +40,10 @@ function normalizeHistory(history) {
   if (!Array.isArray(history)) return [];
 
   return history
-    .filter((entry) => entry && typeof entry.content === "string" && entry.content.trim())
+    .filter(
+      (entry) =>
+        entry && typeof entry.content === "string" && entry.content.trim(),
+    )
     .slice(-20)
     .map((entry) => ({
       role: entry.role === "assistant" ? "assistant" : "user",
@@ -37,7 +51,7 @@ function normalizeHistory(history) {
     }));
 }
 
-async function callOllamaChat(messages) {
+async function callOllama(messages) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT_MS);
 
@@ -48,6 +62,7 @@ async function callOllamaChat(messages) {
       body: JSON.stringify({
         model: OLLAMA_MODEL,
         messages,
+        tools: getToolSchemas(),
         stream: false,
       }),
       signal: controller.signal,
@@ -60,57 +75,84 @@ async function callOllamaChat(messages) {
       throw new Error(`Ollama request failed (${res.status}): ${detail}`);
     }
 
-    const content = data.message?.content?.trim();
-    if (!content) {
-      throw new Error("Ollama returned an empty response");
-    }
-
-    return content;
+    return data;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-function buildFallbackReply(message) {
-  return (
-    `[Phase 1 scaffold] I received your message: "${message}". ` +
-    "Connect Ollama at OLLAMA_BASE_URL to get live completions."
-  );
-}
-
-/**
- * Send a user message to the configured Ollama model and return structured chat messages.
- * Tool calling and RAG enrichment are added in later phases.
- */
-async function chat({ message, conversationId, history = [] }) {
+async function chat({ message, conversationId, history = [], user = null }) {
   const trimmed = message.trim();
   const resolvedConversationId = ensureConversationId(conversationId);
+
   const userMessage = createMessage("user", trimmed);
 
-  const ollamaMessages = [
+  const baseMessages = [
     { role: "system", content: SYSTEM_PROMPT },
     ...normalizeHistory(history),
     { role: "user", content: trimmed },
   ];
 
-  let assistantContent;
+  let assistantContent = "";
+  let toolCalls = [];
+  let usedFallback = false;
 
   try {
-    assistantContent = await callOllamaChat(ollamaMessages);
+    const firstResponse = await callOllama(baseMessages);
+
+    toolCalls = firstResponse.message?.tool_calls || [];
+
+    if (toolCalls.length > 0) {
+      const toolMessages = [];
+
+      for (const toolCall of toolCalls) {
+        const toolName = toolCall.function?.name;
+        const toolArgs = toolCall.function?.arguments || {};
+
+        const result = await runTool(toolName, toolArgs, user);
+
+        toolMessages.push({
+          role: "tool",
+          content: JSON.stringify({
+            toolName,
+            result,
+          }),
+        });
+      }
+
+      const secondResponse = await callOllama([
+        ...baseMessages,
+        firstResponse.message,
+        ...toolMessages,
+      ]);
+
+      assistantContent =
+        secondResponse.message?.content?.trim() ||
+        "Tool result ရခဲ့ပါတယ်၊ ဒါပေမယ့် AI response မရပါ။";
+    } else {
+      assistantContent = firstResponse.message?.content?.trim();
+    }
+
+    if (!assistantContent) {
+      throw new Error("Ollama returned empty response");
+    }
   } catch (err) {
-    console.warn("[ai.service] Ollama unavailable, using fallback:", err.message);
-    assistantContent = buildFallbackReply(trimmed);
+    console.warn("[ai.service] Ollama unavailable:", err.message);
+    usedFallback = true;
+    assistantContent = `[Fallback] AI model response မရသေးပါ။ Backend/Ollama connection ကိုစစ်ပါ။\n\nYour message: ${trimmed}`;
   }
 
-  const assistantMessage = createMessage("assistant", assistantContent);
+  const assistantMessage = createMessage("assistant", assistantContent, {
+    toolCalls,
+  });
 
   return {
     conversationId: resolvedConversationId,
     userMessage,
     assistantMessage,
-    toolCalls: [],
+    toolCalls,
     model: OLLAMA_MODEL,
-    usedFallback: assistantContent.startsWith("[Phase 1 scaffold]"),
+    usedFallback,
   };
 }
 

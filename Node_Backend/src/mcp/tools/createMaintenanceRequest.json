@@ -1,0 +1,12 @@
+{
+  "name": "createMaintenanceRequest",
+  "description": "Create a maintenance request for the resident",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "title": { "type": "string" },
+      "description": { "type": "string" }
+    },
+    "required": ["title"]
+  }
+}
