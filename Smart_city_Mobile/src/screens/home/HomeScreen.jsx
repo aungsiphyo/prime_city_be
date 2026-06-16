@@ -1,9 +1,13 @@
-import React from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import ScreenContainer from '../../components/ScreenContainer';
 import Card from '../../components/Card';
+import FloatingChatButton from '../../components/chat/FloatingChatButton';
+import ChatSheet from '../../components/chat/ChatSheet';
 import { useTheme } from '../../context/ThemeContext';
+
+const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 88 : 68;
 
 const fakeAnnouncements = [
   { id: 'a1', title: 'Water Shutoff', message: 'Maintenance on 12 June', type: 'Maintenance' },
@@ -24,6 +28,7 @@ const TYPE_COLORS = {
 
 export default function HomeScreen({ navigation }) {
   const { theme } = useTheme();
+  const [chatOpen, setChatOpen] = useState(false);
 
   const navigateTo = (screen) => navigation.navigate(screen);
 
@@ -58,6 +63,27 @@ export default function HomeScreen({ navigation }) {
               ))}
             </View>
 
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>AI assistant</Text>
+            <Card style={styles.aiCard}>
+              <View style={styles.aiRow}>
+                <View style={[styles.aiIconWrap, { backgroundColor: theme.primaryBg }]}>
+                  <Ionicons name="sparkles" size={22} color={theme.primary} />
+                </View>
+                <View style={styles.aiCopy}>
+                  <Text style={[styles.aiTitle, { color: theme.text }]}>SmartRes AI</Text>
+                  <Text style={[styles.aiSub, { color: theme.subtext }]}>
+                    Ask about bills, visitors, parking & more — RAG + MCP powered.
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={[styles.aiCta, { backgroundColor: theme.primary }]}
+                onPress={() => setChatOpen(true)}>
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color={theme.primaryText} />
+                <Text style={[styles.aiCtaText, { color: theme.primaryText }]}>Start chatting</Text>
+              </TouchableOpacity>
+            </Card>
+
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Latest announcements</Text>
           </>
         }
@@ -83,6 +109,14 @@ export default function HomeScreen({ navigation }) {
           );
         }}
       />
+
+      <FloatingChatButton
+        visible={!chatOpen}
+        bottomOffset={TAB_BAR_HEIGHT + 12}
+        onPress={() => setChatOpen(true)}
+      />
+
+      <ChatSheet visible={chatOpen} onClose={() => setChatOpen(false)} />
     </ScreenContainer>
   );
 }
@@ -116,6 +150,28 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   actionLabel: { fontSize: 13, fontWeight: '600' },
+  aiCard: { marginBottom: 28 },
+  aiRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  aiIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  aiCopy: { flex: 1 },
+  aiTitle: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
+  aiSub: { fontSize: 13, lineHeight: 18 },
+  aiCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  aiCtaText: { fontSize: 14, fontWeight: '600' },
   cardHeader: { marginBottom: 8 },
   typeBadge: {
     flexDirection: 'row',
