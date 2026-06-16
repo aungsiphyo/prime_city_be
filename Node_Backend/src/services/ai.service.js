@@ -7,7 +7,7 @@ const OLLAMA_BASE_URL = (
 ).replace(/\/+$/, "");
 
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:12b";
-const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS || 60000);
+const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS || 120000);
 
 const SYSTEM_PROMPT =
   process.env.AI_SYSTEM_PROMPT ||
@@ -18,7 +18,7 @@ Rules:
 - Reply in Myanmar language unless the user uses English.
 - You can help with parking, rooms, bills, visitors, SOS, announcements, and community services.
 - Never expose private data.
-- Use tools when database data is needed.
+- Use database/tool data only when provided.
 - If data is missing, say you cannot find it.
 `;
 
@@ -51,20 +51,42 @@ function normalizeHistory(history) {
     }));
 }
 
-async function callOllama(messages) {
+function isToolQuestion(message) {
+  const text = message.toLowerCase();
+
+  return (
+    text.includes("parking") ||
+    text.includes("slot") ||
+    text.includes("ပါကင်") ||
+    text.includes("ကားရပ်") ||
+    text.includes("room") ||
+    text.includes("အခန်း")
+  );
+}
+
+function shouldEnableTools(message) {
+  return process.env.AI_ENABLE_TOOLS === "true" && isToolQuestion(message);
+}
+
+async function callOllama(messages, { toolsEnabled = false } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT_MS);
 
   try {
+    const body = {
+      model: OLLAMA_MODEL,
+      messages,
+      stream: false,
+    };
+
+    if (toolsEnabled) {
+      body.tools = getToolSchemas();
+    }
+
     const res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: OLLAMA_MODEL,
-        messages,
-        tools: getToolSchemas(),
-        stream: false,
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
 
@@ -81,57 +103,78 @@ async function callOllama(messages) {
   }
 }
 
+async function manualToolContext(message, user) {
+  const text = message.toLowerCase();
+
+  if (
+    text.includes("parking") ||
+    text.includes("slot") ||
+    text.includes("ပါကင်") ||
+    text.includes("ကားရပ်")
+  ) {
+    const result = await runTool("getParkingStatus", {}, user);
+    return {
+      toolName: "getParkingStatus",
+      result,
+    };
+  }
+
+  if (text.includes("room") || text.includes("အခန်း")) {
+    const result = await runTool("getMyRoom", {}, user);
+    return {
+      toolName: "getMyRoom",
+      result,
+    };
+  }
+
+  return null;
+}
+
 async function chat({ message, conversationId, history = [], user = null }) {
   const trimmed = message.trim();
   const resolvedConversationId = ensureConversationId(conversationId);
-
   const userMessage = createMessage("user", trimmed);
 
-  const baseMessages = [
-    { role: "system", content: SYSTEM_PROMPT },
-    ...normalizeHistory(history),
-    { role: "user", content: trimmed },
-  ];
-
-  let assistantContent = "";
   let toolCalls = [];
   let usedFallback = false;
+  let assistantContent = "";
 
   try {
-    const firstResponse = await callOllama(baseMessages);
+    const toolContext = await manualToolContext(trimmed, user);
 
-    toolCalls = firstResponse.message?.tool_calls || [];
+    const baseMessages = [
+      { role: "system", content: SYSTEM_PROMPT },
+      ...normalizeHistory(history),
+    ];
 
-    if (toolCalls.length > 0) {
-      const toolMessages = [];
+    if (toolContext) {
+      toolCalls = [
+        {
+          function: {
+            name: toolContext.toolName,
+            arguments: {},
+          },
+        },
+      ];
 
-      for (const toolCall of toolCalls) {
-        const toolName = toolCall.function?.name;
-        const toolArgs = toolCall.function?.arguments || {};
-
-        const result = await runTool(toolName, toolArgs, user);
-
-        toolMessages.push({
-          role: "tool",
-          content: JSON.stringify({
-            toolName,
-            result,
-          }),
-        });
-      }
-
-      const secondResponse = await callOllama([
-        ...baseMessages,
-        firstResponse.message,
-        ...toolMessages,
-      ]);
-
-      assistantContent =
-        secondResponse.message?.content?.trim() ||
-        "Tool result ရခဲ့ပါတယ်၊ ဒါပေမယ့် AI response မရပါ။";
+      baseMessages.push({
+        role: "user",
+        content:
+          `Backend tool result:\n${JSON.stringify(toolContext, null, 2)}\n\n` +
+          `User question: ${trimmed}`,
+      });
     } else {
-      assistantContent = firstResponse.message?.content?.trim();
+      baseMessages.push({
+        role: "user",
+        content: trimmed,
+      });
     }
+
+    const toolsEnabled = shouldEnableTools(trimmed);
+
+    const response = await callOllama(baseMessages, { toolsEnabled });
+
+    assistantContent = response.message?.content?.trim();
 
     if (!assistantContent) {
       throw new Error("Ollama returned empty response");
@@ -139,7 +182,10 @@ async function chat({ message, conversationId, history = [], user = null }) {
   } catch (err) {
     console.warn("[ai.service] Ollama unavailable:", err.message);
     usedFallback = true;
-    assistantContent = `[Fallback] AI model response မရသေးပါ။ Backend/Ollama connection ကိုစစ်ပါ။\n\nYour message: ${trimmed}`;
+    assistantContent =
+      `[Fallback] AI model response မရသေးပါ။ Backend/Ollama connection ကိုစစ်ပါ။\n\n` +
+      `Error: ${err.message}\n\n` +
+      `Your message: ${trimmed}`;
   }
 
   const assistantMessage = createMessage("assistant", assistantContent, {

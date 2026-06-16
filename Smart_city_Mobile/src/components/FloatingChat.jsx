@@ -9,19 +9,21 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useChat } from '../context/ChatContext';
 import { useTheme } from '../context/ThemeContext';
+import { sendMessage as sendAIMessage } from '../services/chatService';
 
 export default function FloatingChat() {
-  const { isOpen, open, close, toggle, messages, sendMessage } = useChat();
+  const { isOpen, close, toggle, messages, sendMessage } = useChat();
   const { theme } = useTheme();
   const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
   const inputRef = useRef(null);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
-      // small delay to ensure modal shown
       setTimeout(() => {
         try {
           inputRef.current.focus();
@@ -30,12 +32,36 @@ export default function FloatingChat() {
     }
   }, [isOpen]);
 
-  function handleSend() {
-    if (!text.trim()) return;
-    sendMessage(text.trim(), 'user');
+  async function handleSend() {
+    const userText = text.trim();
+
+    if (!userText || sending) return;
+
     setText('');
-    // placeholder: echo bot reply
-    setTimeout(() => sendMessage(`Echo: ${text.trim()}`, 'bot'), 500);
+    setSending(true);
+
+    sendMessage(userText, 'user');
+
+    try {
+      const result = await sendAIMessage(userText, {
+        enableMcpTools: true,
+        ragContext: 'resident',
+      });
+
+      const assistantText =
+        result?.assistantMessage?.content ||
+        result?.assistantMessage?.text ||
+        'AI response မရပါ။';
+
+      sendMessage(assistantText, 'bot');
+    } catch (err) {
+      sendMessage(
+        err.message || 'AI assistant ချိတ်ဆက်မရပါ။ Backend/Ollama ကိုစစ်ပါ။',
+        'bot',
+      );
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -55,6 +81,7 @@ export default function FloatingChat() {
               <Text style={[styles.headerText, { color: theme.text }]}>
                 Assistant
               </Text>
+
               <TouchableOpacity onPress={close} style={styles.closeButton}>
                 <Text style={{ color: theme.subtext }}>✕</Text>
               </TouchableOpacity>
@@ -93,12 +120,27 @@ export default function FloatingChat() {
                   styles.input,
                   { backgroundColor: theme.input, color: theme.text },
                 ]}
+                editable={!sending}
+                onSubmitEditing={handleSend}
+                returnKeyType="send"
               />
+
               <TouchableOpacity
                 onPress={handleSend}
-                style={[styles.sendButton, { backgroundColor: theme.primary }]}
+                disabled={sending || !text.trim()}
+                style={[
+                  styles.sendButton,
+                  {
+                    backgroundColor:
+                      sending || !text.trim() ? theme.border : theme.primary,
+                  },
+                ]}
               >
-                <Text style={{ color: theme.primaryText }}>Send</Text>
+                {sending ? (
+                  <ActivityIndicator size="small" color={theme.primaryText} />
+                ) : (
+                  <Text style={{ color: theme.primaryText }}>Send</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -158,23 +200,50 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
   },
-  headerText: { fontSize: 16, fontWeight: '600' },
-  closeButton: { position: 'absolute', right: 12 },
-  messages: { flex: 1, padding: 12 },
+  headerText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  closeButton: {
+    position: 'absolute',
+    right: 12,
+  },
+  messages: {
+    flex: 1,
+    padding: 12,
+  },
   messageRow: {
     marginVertical: 6,
     padding: 10,
     borderRadius: 8,
     maxWidth: '85%',
   },
-  userMsg: { alignSelf: 'flex-end', backgroundColor: '#0B84FF' },
-  botMsg: { alignSelf: 'flex-start', backgroundColor: 'transparent' },
-  inputRow: { flexDirection: 'row', padding: 12, alignItems: 'center' },
-  input: { flex: 1, borderRadius: 8, paddingHorizontal: 12, height: 40 },
+  userMsg: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#0B84FF',
+  },
+  botMsg: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'transparent',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    padding: 12,
+    alignItems: 'center',
+  },
+  input: {
+    flex: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 40,
+  },
   sendButton: {
     marginLeft: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
+    minWidth: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

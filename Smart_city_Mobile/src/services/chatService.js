@@ -1,6 +1,8 @@
 import { API_BASE_URL } from '../config/api';
 
 let conversationId = null;
+const FALLBACK_ERROR_MESSAGE =
+  'AI assistant ချိတ်ဆက်မရသေးပါ။ Backend/Ollama connection ကိုစစ်ပါ။';
 
 function createMessage(role, content, extras = {}) {
   return {
@@ -51,6 +53,10 @@ export async function sendMessage(text, options = {}) {
 
   if (!res.ok || data.success === false) {
     throw new Error(data.message || 'AI request failed');
+  }
+
+  if (data.meta?.usedFallback) {
+    throw new Error(FALLBACK_ERROR_MESSAGE);
   }
 
   if (data.conversationId) {
