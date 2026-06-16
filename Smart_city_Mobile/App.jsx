@@ -4,10 +4,13 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import ThemeProvider, { useTheme } from './src/context/ThemeContext';
-import AuthProvider from './src/context/AuthContext';
+import AuthProvider, { useAuth } from './src/context/AuthContext';
+import { ChatProvider } from './src/context/ChatContext';
+import FloatingChat from './src/components/FloatingChat';
 
 function AppContent() {
   const { theme } = useTheme();
+  const { isAuthenticated } = useAuth();
   return (
     <>
       <StatusBar
@@ -15,6 +18,7 @@ function AppContent() {
         backgroundColor={theme.background}
       />
       <AppNavigator />
+      {isAuthenticated && <FloatingChat />}
     </>
   );
 }
@@ -25,7 +29,9 @@ export default function App() {
       <SafeAreaProvider>
         <ThemeProvider>
           <AuthProvider>
-            <AppContent />
+            <ChatProvider>
+              <AppContent />
+            </ChatProvider>
           </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>

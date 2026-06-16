@@ -1,24 +1,55 @@
 import React, { useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+} from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import ScreenContainer from '../../components/ScreenContainer';
 import Card from '../../components/Card';
-import FloatingChatButton from '../../components/chat/FloatingChatButton';
-import ChatSheet from '../../components/chat/ChatSheet';
+// local chat components removed: using global FloatingChat instead
 import { useTheme } from '../../context/ThemeContext';
 
 const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 88 : 68;
 
 const fakeAnnouncements = [
-  { id: 'a1', title: 'Water Shutoff', message: 'Maintenance on 12 June', type: 'Maintenance' },
-  { id: 'a2', title: 'Community BBQ', message: 'Join us this Saturday', type: 'Event' },
+  {
+    id: 'a1',
+    title: 'Water Shutoff',
+    message: 'Maintenance on 12 June',
+    type: 'Maintenance',
+  },
+  {
+    id: 'a2',
+    title: 'Community BBQ',
+    message: 'Join us this Saturday',
+    type: 'Event',
+  },
 ];
 
 const QUICK_ACTIONS = [
   { id: 'bills', label: 'Bills', icon: 'receipt-outline', screen: 'Bills' },
-  { id: 'visitor', label: 'Visitor', icon: 'person-add-outline', screen: 'PreRegister' },
-  { id: 'alerts', label: 'Alerts', icon: 'notifications-outline', screen: 'Notifications' },
-  { id: 'news', label: 'News', icon: 'megaphone-outline', screen: 'Announcements' },
+  {
+    id: 'visitor',
+    label: 'Visitor',
+    icon: 'person-add-outline',
+    screen: 'PreRegister',
+  },
+  {
+    id: 'alerts',
+    label: 'Alerts',
+    icon: 'notifications-outline',
+    screen: 'Notifications',
+  },
+  {
+    id: 'news',
+    label: 'News',
+    icon: 'megaphone-outline',
+    screen: 'Announcements',
+  },
 ];
 
 const TYPE_COLORS = {
@@ -28,63 +59,65 @@ const TYPE_COLORS = {
 
 export default function HomeScreen({ navigation }) {
   const { theme } = useTheme();
-  const [chatOpen, setChatOpen] = useState(false);
+  // chat is managed globally by ChatProvider / FloatingChat
 
-  const navigateTo = (screen) => navigation.navigate(screen);
+  const navigateTo = screen => navigation.navigate(screen);
 
   return (
     <ScreenContainer navigation={navigation}>
       <FlatList
         data={fakeAnnouncements}
-        keyExtractor={(i) => i.id}
+        keyExtractor={i => i.id}
         contentContainerStyle={styles.list}
         ListHeaderComponent={
           <>
             <View style={styles.hero}>
-              <Text style={[styles.greeting, { color: theme.subtext }]}>Good morning</Text>
-              <Text style={[styles.heading, { color: theme.text }]}>Welcome, Resident</Text>
+              <Text style={[styles.greeting, { color: theme.subtext }]}>
+                Good morning
+              </Text>
+              <Text style={[styles.heading, { color: theme.text }]}>
+                Welcome, Resident
+              </Text>
               <Text style={[styles.sub, { color: theme.subtext }]}>
                 Unit A-101 · Smart Residential
               </Text>
             </View>
 
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Quick actions</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>
+              Quick actions
+            </Text>
             <View style={styles.actionsRow}>
-              {QUICK_ACTIONS.map((action) => (
+              {QUICK_ACTIONS.map(action => (
                 <TouchableOpacity
                   key={action.id}
-                  style={[styles.actionBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
-                  onPress={() => navigateTo(action.screen)}>
-                  <View style={[styles.actionIcon, { backgroundColor: theme.primary + '22' }]}>
-                    <Ionicons name={action.icon} size={22} color={theme.primary} />
+                  style={[
+                    styles.actionBtn,
+                    { backgroundColor: theme.card, borderColor: theme.border },
+                  ]}
+                  onPress={() => navigateTo(action.screen)}
+                >
+                  <View
+                    style={[
+                      styles.actionIcon,
+                      { backgroundColor: theme.primary + '22' },
+                    ]}
+                  >
+                    <Ionicons
+                      name={action.icon}
+                      size={22}
+                      color={theme.primary}
+                    />
                   </View>
-                  <Text style={[styles.actionLabel, { color: theme.text }]}>{action.label}</Text>
+                  <Text style={[styles.actionLabel, { color: theme.text }]}>
+                    {action.label}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>AI assistant</Text>
-            <Card style={styles.aiCard}>
-              <View style={styles.aiRow}>
-                <View style={[styles.aiIconWrap, { backgroundColor: theme.primaryBg }]}>
-                  <Ionicons name="sparkles" size={22} color={theme.primary} />
-                </View>
-                <View style={styles.aiCopy}>
-                  <Text style={[styles.aiTitle, { color: theme.text }]}>SmartRes AI</Text>
-                  <Text style={[styles.aiSub, { color: theme.subtext }]}>
-                    Ask about bills, visitors, parking & more — RAG + MCP powered.
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                style={[styles.aiCta, { backgroundColor: theme.primary }]}
-                onPress={() => setChatOpen(true)}>
-                <Ionicons name="chatbubble-ellipses-outline" size={16} color={theme.primaryText} />
-                <Text style={[styles.aiCtaText, { color: theme.primaryText }]}>Start chatting</Text>
-              </TouchableOpacity>
-            </Card>
-
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Latest announcements</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>
+              Latest announcements
+            </Text>
           </>
         }
         renderItem={({ item }) => {
@@ -96,27 +129,31 @@ export default function HomeScreen({ navigation }) {
               <View style={styles.cardHeader}>
                 <View style={[styles.typeBadge, { backgroundColor: accentBg }]}>
                   <Ionicons
-                    name={item.type === 'Event' ? 'calendar-outline' : 'construct-outline'}
+                    name={
+                      item.type === 'Event'
+                        ? 'calendar-outline'
+                        : 'construct-outline'
+                    }
                     size={14}
                     color={accentColor}
                   />
-                  <Text style={[styles.typeText, { color: accentColor }]}>{item.type}</Text>
+                  <Text style={[styles.typeText, { color: accentColor }]}>
+                    {item.type}
+                  </Text>
                 </View>
               </View>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>{item.title}</Text>
-              <Text style={[styles.cardText, { color: theme.subtext }]}>{item.message}</Text>
+              <Text style={[styles.cardTitle, { color: theme.text }]}>
+                {item.title}
+              </Text>
+              <Text style={[styles.cardText, { color: theme.subtext }]}>
+                {item.message}
+              </Text>
             </Card>
           );
         }}
       />
 
-      <FloatingChatButton
-        visible={!chatOpen}
-        bottomOffset={TAB_BAR_HEIGHT + 12}
-        onPress={() => setChatOpen(true)}
-      />
-
-      <ChatSheet visible={chatOpen} onClose={() => setChatOpen(false)} />
+      {/* global FloatingChat mounted in App root */}
     </ScreenContainer>
   );
 }
@@ -125,7 +162,12 @@ const styles = StyleSheet.create({
   list: { padding: 16, paddingBottom: 32 },
   hero: { marginBottom: 24 },
   greeting: { fontSize: 14, fontWeight: '500', marginBottom: 4 },
-  heading: { fontSize: 26, fontWeight: '700', letterSpacing: -0.5, marginBottom: 4 },
+  heading: {
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
   sub: { fontSize: 14 },
   sectionTitle: { fontSize: 17, fontWeight: '700', marginBottom: 12 },
   actionsRow: {

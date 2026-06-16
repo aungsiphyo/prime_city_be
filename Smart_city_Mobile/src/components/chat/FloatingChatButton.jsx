@@ -1,14 +1,30 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Platform, Pressable, StyleSheet, View } from 'react-native';
+import {
+  Animated,
+  Easing,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../../context/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const BUTTON_SIZE = 58;
 const BOB_DISTANCE = 8;
 const BOB_DURATION = 1800;
 
-export default function FloatingChatButton({ onPress, visible = true, bottomOffset = 100 }) {
+export default function FloatingChatButton({
+  onPress,
+  visible = true,
+  bottomOffset = 70, // default distance from bottom
+  footerHeight = 56, // your tab/footer height, adjust as needed
+}) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
+  // combine safe-area bottom inset + footer height + offset
+  const bottomPos = bottomOffset + footerHeight + insets.bottom;
 
   const bobAnim = useRef(new Animated.Value(0)).current;
   const shadowAnim = useRef(new Animated.Value(0)).current;
@@ -101,7 +117,10 @@ export default function FloatingChatButton({ onPress, visible = true, bottomOffs
   if (!visible) return null;
 
   return (
-    <View pointerEvents="box-none" style={[styles.container, { bottom: bottomOffset }]}>
+    <View
+      pointerEvents="box-none"
+      style={[styles.container, { bottom: bottomPos }]}
+    >
       <Animated.View style={{ transform: [{ translateY }] }}>
         <Animated.View
           style={[
@@ -131,8 +150,13 @@ export default function FloatingChatButton({ onPress, visible = true, bottomOffs
                 shadowColor: theme.primary,
               },
               pressed && styles.buttonPressed,
-            ]}>
-            <Ionicons name="chatbubble-ellipses" size={26} color={theme.primaryText} />
+            ]}
+          >
+            <Ionicons
+              name="chatbubble-ellipses"
+              size={26}
+              color={theme.primaryText}
+            />
           </Pressable>
         </Animated.View>
       </Animated.View>
