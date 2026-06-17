@@ -1,7 +1,15 @@
 const mongoose = require("mongoose");
+const { generateVisitorUid } = require("../utils/generateUid");
 
 const VisitorSchema = new mongoose.Schema(
   {
+    visitor_uid: {
+      type: String,
+      default: generateVisitorUid,
+      unique: true,
+      sparse: true,
+      immutable: true,
+    },
     firstName: { type: String, trim: true, default: "" },
     lastName: { type: String, trim: true, default: "" },
     email: { type: String, trim: true, lowercase: true, default: "" },

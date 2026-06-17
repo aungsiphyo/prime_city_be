@@ -19,6 +19,7 @@ router.get("/profile", protect, async (req, res) => {
       message: "Profile access granted",
       user: {
         id: user._id,
+        resident_uid: user.resident_uid || null,
         fullname: user.fullname,
         email: user.email,
         phone: user.phone,
