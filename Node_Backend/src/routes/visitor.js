@@ -100,6 +100,7 @@ router.post("/register", async (req, res) => {
     await visitor.save();
 
     broadcastSSE(req, "registered", {
+      uid: visitor.visitor_uid,
       name: visitor.fullname,
       badge: visitor.badgeNumber,
     });
@@ -107,6 +108,7 @@ router.post("/register", async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       io.emit("visitor:registered", {
+        uid: visitor.visitor_uid,
         name: visitor.fullname,
         badge: visitor.badgeNumber,
         time: new Date().toISOString(),
@@ -118,6 +120,7 @@ router.post("/register", async (req, res) => {
       success: true,
       message: "Registration successful!",
       data: {
+        visitor_uid: visitor.visitor_uid,
         badgeNumber: visitor.badgeNumber,
         name: visitor.fullname,
         id: visitor._id,

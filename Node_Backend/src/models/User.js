@@ -1,7 +1,15 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const { generateResidentUid } = require("../utils/generateUid");
 
 const UserSchema = new mongoose.Schema({
+  resident_uid: {
+    type: String,
+    default: generateResidentUid,
+    unique: true,
+    sparse: true,
+    immutable: true,
+  },
   fullname: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   phone: { type: String, required: true },

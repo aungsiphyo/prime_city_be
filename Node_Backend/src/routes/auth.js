@@ -40,7 +40,13 @@ router.post("/signup", async (req, res) => {
     });
     await newUser.save();
 
-    res.status(201).json({ message: "Register success" });
+    res.status(201).json({
+      message: "Register success",
+      user: {
+        id: newUser._id,
+        resident_uid: newUser.resident_uid,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -122,6 +128,7 @@ router.post("/login/step2", async (req, res) => {
       refreshToken,
       user: {
         id: user._id,
+        resident_uid: user.resident_uid,
         fullname: user.fullname,
         role: user.role,
       },
