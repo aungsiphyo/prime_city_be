@@ -10,17 +10,219 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Animated,
+  Easing,
 } from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useChat } from '../context/ChatContext';
 import { useTheme } from '../context/ThemeContext';
 import { sendMessage as sendAIMessage } from '../services/chatService';
 
+const CHAT_BOB_DISTANCE = 8;
+const CHAT_BOB_DURATION = 1800;
+const THINKING_DOTS = [0, 1, 2];
+
+function ThinkingIndicator({ theme }) {
+  const dotAnims = useRef(
+    THINKING_DOTS.map(() => new Animated.Value(0.35)),
+  ).current;
+
+  useEffect(() => {
+    const dotLoops = dotAnims.map((anim, index) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(index * 140),
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 420,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(anim, {
+            toValue: 0.35,
+            duration: 420,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      ),
+    );
+
+    dotLoops.forEach(loop => loop.start());
+
+    return () => {
+      dotLoops.forEach(loop => loop.stop());
+    };
+  }, [dotAnims]);
+
+  return (
+    <View style={[styles.messageRow, styles.thinkingRow]}>
+      <View
+        style={[
+          styles.thinkingBubble,
+          { backgroundColor: theme.card, borderColor: theme.border },
+        ]}
+      >
+        <ActivityIndicator size="small" color={theme.primary} />
+        <Text style={[styles.thinkingText, { color: theme.subtext }]}>အဖြေရှာနေပါတယ်</Text>
+        <View style={styles.thinkingDots}>
+          {dotAnims.map((anim, index) => (
+            <Animated.View
+              key={THINKING_DOTS[index]}
+              style={[
+                styles.thinkingDot,
+                {
+                  backgroundColor: theme.primary,
+                  opacity: anim,
+                  transform: [
+                    {
+                      scale: anim.interpolate({
+                        inputRange: [0.35, 1],
+                        outputRange: [0.72, 1],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            />
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function HistoryDrawer({
+  theme,
+  sessions,
+  activeSessionId,
+  onClose,
+  onNewChat,
+  onSelectSession,
+  onDeleteSession,
+}) {
+  return (
+    <View style={styles.historyLayer}>
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={onClose}
+        style={styles.historyScrim}
+      />
+
+      <View
+        style={[
+          styles.historyPanel,
+          { backgroundColor: theme.surface, borderColor: theme.border },
+        ]}
+      >
+        <View style={styles.historyHeader}>
+          <Text style={[styles.historyTitle, { color: theme.text }]}>Chat history</Text>
+          <TouchableOpacity
+            onPress={onClose}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={styles.historyClose}
+          >
+            <Ionicons name="close" size={20} color={theme.subtext} />
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          onPress={onNewChat}
+          activeOpacity={0.82}
+          style={[
+            styles.newChatButton,
+            { backgroundColor: theme.primaryBg, borderColor: theme.primary },
+          ]}
+        >
+          <Ionicons name="create-outline" size={17} color={theme.primary} />
+          <Text style={[styles.newChatText, { color: theme.primary }]}>New chat</Text>
+        </TouchableOpacity>
+
+        <FlatList
+          data={sessions}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.historyList}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => {
+            const isActive = item.id === activeSessionId;
+            const lastMessage = item.messages[item.messages.length - 1];
+            const preview = lastMessage?.text || 'No messages yet';
+
+            return (
+              <TouchableOpacity
+                onPress={() => onSelectSession(item.id)}
+                activeOpacity={0.84}
+                style={[
+                  styles.historyItem,
+                  {
+                    backgroundColor: isActive ? theme.primaryBg : 'transparent',
+                    borderColor: isActive ? theme.primary : theme.border,
+                  },
+                ]}
+              >
+                <View style={styles.historyItemTextWrap}>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.historyItemTitle,
+                      { color: isActive ? theme.primary : theme.text },
+                    ]}
+                  >
+                    {item.title}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.historyItemPreview, { color: theme.subtext }]}
+                  >
+                    {preview}
+                  </Text>
+                </View>
+
+                {sessions.length > 1 && (
+                  <TouchableOpacity
+                    onPress={() => onDeleteSession(item.id)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={styles.historyDelete}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={theme.subtext} />
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            );
+          }}
+        />
+      </View>
+    </View>
+  );
+}
+
 export default function FloatingChat() {
-  const { isOpen, close, toggle, messages, sendMessage } = useChat();
+  const {
+    isOpen,
+    close,
+    toggle,
+    sessions,
+    activeSession,
+    activeSessionId,
+    messages,
+    sendMessage,
+    setActiveConversationId,
+    newChat,
+    selectSession,
+    deleteSession,
+  } = useChat();
   const { theme } = useTheme();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const inputRef = useRef(null);
+  const listRef = useRef(null);
+  const bobAnim = useRef(new Animated.Value(0)).current;
+  const glowAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!isOpen) setHistoryOpen(false);
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -32,36 +234,133 @@ export default function FloatingChat() {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated: true });
+    });
+  }, [isOpen, messages.length, sending]);
+
+  useEffect(() => {
+    const bobLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bobAnim, {
+          toValue: 1,
+          duration: CHAT_BOB_DURATION,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(bobAnim, {
+          toValue: 0,
+          duration: CHAT_BOB_DURATION,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    const glowLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, {
+          toValue: 1,
+          duration: CHAT_BOB_DURATION,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: false,
+        }),
+        Animated.timing(glowAnim, {
+          toValue: 0,
+          duration: CHAT_BOB_DURATION,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+
+    bobLoop.start();
+    glowLoop.start();
+
+    return () => {
+      bobLoop.stop();
+      glowLoop.stop();
+    };
+  }, [bobAnim, glowAnim]);
+
+  const translateY = bobAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -CHAT_BOB_DISTANCE],
+  });
+
+  const glowOpacity = glowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.2, 0.42],
+  });
+
+  const glowScale = glowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.92, 1.04],
+  });
+
   async function handleSend() {
     const userText = text.trim();
+    const targetSessionId = activeSessionId;
 
-    if (!userText || sending) return;
+    if (!userText || sending || !targetSessionId) return;
 
     setText('');
     setSending(true);
 
-    sendMessage(userText, 'user');
+    sendMessage(userText, 'user', { sessionId: targetSessionId });
 
     try {
       const result = await sendAIMessage(userText, {
+        conversationId: activeSession?.conversationId,
+        syncGlobalConversationId: false,
         enableMcpTools: true,
         ragContext: 'resident',
       });
+
+      if (result?.conversationId) {
+        setActiveConversationId(result.conversationId, {
+          sessionId: targetSessionId,
+        });
+      }
 
       const assistantText =
         result?.assistantMessage?.content ||
         result?.assistantMessage?.text ||
         'AI response မရပါ။';
 
-      sendMessage(assistantText, 'bot');
+      sendMessage(assistantText, 'bot', { sessionId: targetSessionId });
     } catch (err) {
       sendMessage(
         err.message || 'AI assistant ချိတ်ဆက်မရပါ။ Backend/Ollama ကိုစစ်ပါ။',
         'bot',
+        { sessionId: targetSessionId },
       );
     } finally {
       setSending(false);
     }
+  }
+
+  function handleClose() {
+    setHistoryOpen(false);
+    close();
+  }
+
+  function handleNewChat() {
+    newChat();
+    setText('');
+    setHistoryOpen(false);
+  }
+
+  function handleSelectSession(sessionId) {
+    selectSession(sessionId);
+    setHistoryOpen(false);
+  }
+
+  function handleDeleteSession(sessionId) {
+    deleteSession(sessionId);
   }
 
   return (
@@ -70,7 +369,7 @@ export default function FloatingChat() {
         visible={isOpen}
         animationType="slide"
         transparent
-        onRequestClose={close}
+        onRequestClose={handleClose}
       >
         <KeyboardAvoidingView
           style={styles.modalContainer}
@@ -78,19 +377,47 @@ export default function FloatingChat() {
         >
           <View style={[styles.chatBox, { backgroundColor: theme.surface }]}>
             <View style={styles.header}>
+              <TouchableOpacity
+                onPress={() => setHistoryOpen(true)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={styles.menuButton}
+              >
+                <Ionicons name="menu" size={24} color={theme.subtext} />
+              </TouchableOpacity>
+
               <Text style={[styles.headerText, { color: theme.text }]}>
                 Assistant
               </Text>
 
-              <TouchableOpacity onPress={close} style={styles.closeButton}>
+              <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                 <Text style={{ color: theme.subtext }}>✕</Text>
               </TouchableOpacity>
             </View>
 
+            {historyOpen && (
+              <HistoryDrawer
+                theme={theme}
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                onClose={() => setHistoryOpen(false)}
+                onNewChat={handleNewChat}
+                onSelectSession={handleSelectSession}
+                onDeleteSession={handleDeleteSession}
+              />
+            )}
+
             <FlatList
+              ref={listRef}
               data={messages}
               keyExtractor={i => i.id}
               style={styles.messages}
+              keyboardShouldPersistTaps="handled"
+              ListFooterComponent={
+                sending ? <ThinkingIndicator theme={theme} /> : null
+              }
+              onContentSizeChange={() => {
+                listRef.current?.scrollToEnd({ animated: true });
+              }}
               renderItem={({ item }) => (
                 <View
                   style={[
@@ -120,9 +447,13 @@ export default function FloatingChat() {
                   styles.input,
                   { backgroundColor: theme.input, color: theme.text },
                 ]}
-                editable={!sending}
-                onSubmitEditing={handleSend}
-                returnKeyType="send"
+                autoCapitalize="none"
+                autoCorrect={false}
+                blurOnSubmit={false}
+                keyboardType="default"
+                multiline
+                returnKeyType="default"
+                textAlignVertical="center"
               />
 
               <TouchableOpacity
@@ -148,14 +479,34 @@ export default function FloatingChat() {
       </Modal>
 
       <View pointerEvents="box-none" style={styles.container}>
-        <TouchableOpacity
-          accessibilityLabel="Open chat"
-          accessibilityHint="Opens assistant chat"
-          onPress={toggle}
-          style={[styles.fab, { backgroundColor: theme.primary }]}
-        >
-          <Text style={styles.fabText}>💬</Text>
-        </TouchableOpacity>
+        <Animated.View style={{ transform: [{ translateY }] }}>
+          <Animated.View
+            style={[
+              styles.glow,
+              {
+                backgroundColor: theme.primary,
+                opacity: glowOpacity,
+                transform: [{ scale: glowScale }],
+              },
+            ]}
+          />
+
+          <TouchableOpacity
+            accessibilityLabel="Open chat"
+            accessibilityHint="Opens assistant chat"
+            onPress={toggle}
+            activeOpacity={0.86}
+            style={[
+              styles.fab,
+              {
+                backgroundColor: theme.primary,
+                shadowColor: theme.primary,
+              },
+            ]}
+          >
+            <Text style={styles.fabText}>💬</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </View>
     </>
   );
@@ -165,8 +516,16 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     right: 16,
-    bottom: 32,
+    bottom: Platform.OS === 'ios' ? 98 : 84,
     zIndex: 9999,
+  },
+  glow: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
   },
   fab: {
     width: 56,
@@ -174,10 +533,10 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.3,
+    shadowRadius: 9,
+    elevation: 8,
   },
   fabText: {
     fontSize: 24,
@@ -200,6 +559,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: 'rgba(0,0,0,0.06)',
   },
+  menuButton: {
+    position: 'absolute',
+    left: 12,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerText: {
     fontSize: 16,
     fontWeight: '600',
@@ -207,6 +574,95 @@ const styles = StyleSheet.create({
   closeButton: {
     position: 'absolute',
     right: 12,
+  },
+  historyLayer: {
+    position: 'absolute',
+    top: 52,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 20,
+  },
+  historyScrim: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(0,0,0,0.32)',
+  },
+  historyPanel: {
+    width: 270,
+    height: '100%',
+    borderRightWidth: 1,
+    paddingHorizontal: 12,
+    paddingTop: 14,
+    paddingBottom: 12,
+  },
+  historyHeader: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  historyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  historyClose: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  newChatButton: {
+    minHeight: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  newChatText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  historyList: {
+    paddingBottom: 10,
+  },
+  historyItem: {
+    minHeight: 60,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  historyItemTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  historyItemTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  historyItemPreview: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  historyDelete: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
   },
   messages: {
     flex: 1,
@@ -217,6 +673,34 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     maxWidth: '85%',
+  },
+  thinkingRow: {
+    alignSelf: 'flex-start',
+  },
+  thinkingBubble: {
+    minHeight: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  thinkingText: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  thinkingDots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  thinkingDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
   userMsg: {
     alignSelf: 'flex-end',
@@ -229,13 +713,18 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     padding: 12,
-    alignItems: 'center',
+    alignItems: 'flex-end',
   },
   input: {
     flex: 1,
     borderRadius: 8,
     paddingHorizontal: 12,
-    height: 40,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 8,
+    minHeight: 44,
+    maxHeight: 96,
+    fontSize: 16,
+    lineHeight: 24,
+    includeFontPadding: true,
   },
   sendButton: {
     marginLeft: 8,
@@ -243,6 +732,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
     minWidth: 58,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },

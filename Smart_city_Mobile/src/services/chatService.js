@@ -41,7 +41,7 @@ export async function sendMessage(text, options = {}) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      conversationId,
+      conversationId: options.conversationId ?? conversationId,
       message: trimmed,
       history: options.history ?? [],
       enableMcpTools: options.enableMcpTools ?? true,
@@ -59,17 +59,19 @@ export async function sendMessage(text, options = {}) {
     throw new Error(FALLBACK_ERROR_MESSAGE);
   }
 
-  if (data.conversationId) {
+  if (data.conversationId && options.syncGlobalConversationId !== false) {
     conversationId = data.conversationId;
   }
 
   const userMessage = data.userMessage || createMessage('user', trimmed);
   const assistantMessage = normalizeAssistantMessage(data);
+  const nextConversationId =
+    data.conversationId ?? options.conversationId ?? conversationId;
 
   return {
     userMessage,
     assistantMessage,
-    conversationId,
+    conversationId: nextConversationId,
     toolCalls: data.toolCalls ?? assistantMessage.toolCalls ?? [],
   };
 }
@@ -101,6 +103,10 @@ export async function invokeMcpTool(toolName, args = {}) {
 
 export function getConversationId() {
   return conversationId;
+}
+
+export function setConversationId(nextConversationId) {
+  conversationId = nextConversationId ?? null;
 }
 
 export function resetConversation() {
