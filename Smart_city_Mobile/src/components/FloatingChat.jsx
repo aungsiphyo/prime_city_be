@@ -16,6 +16,7 @@ import {
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useChat } from '../context/ChatContext';
 import { useTheme } from '../context/ThemeContext';
+import useVoiceAssistant from '../hooks/useVoiceAssistant';
 import { sendMessage as sendAIMessage } from '../services/chatService';
 
 const CHAT_BOB_DISTANCE = 8;
@@ -219,10 +220,31 @@ export default function FloatingChat() {
   const listRef = useRef(null);
   const bobAnim = useRef(new Animated.Value(0)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
+  const voiceReplyEnabledRef = useRef(false);
+  const {
+    listening,
+    voiceAvailable,
+    startListening,
+    stopListening,
+    speak,
+    stopSpeaking,
+  } = useVoiceAssistant({
+    onSpeechText: spokenText => {
+      voiceReplyEnabledRef.current = true;
+      setText(spokenText);
+    },
+  });
 
   useEffect(() => {
     if (!isOpen) setHistoryOpen(false);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) return;
+
+    stopSpeaking();
+    if (listening) stopListening();
+  }, [isOpen, listening, stopListening, stopSpeaking]);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -300,6 +322,20 @@ export default function FloatingChat() {
     inputRange: [0, 1],
     outputRange: [0.92, 1.04],
   });
+  const micUnavailable = voiceAvailable === false;
+  const micIconName = listening
+    ? 'mic'
+    : micUnavailable
+      ? 'mic-off-outline'
+      : 'mic-outline';
+  const micAccessibilityLabel = listening
+    ? 'Stop voice input'
+    : micUnavailable
+      ? 'Voice input unavailable'
+      : 'Start voice input';
+  const micAccessibilityHint = micUnavailable
+    ? 'Speech recognition is unavailable on this emulator or device'
+    : 'Uses speech recognition to fill the message box';
 
   async function handleSend() {
     const userText = text.trim();
@@ -307,6 +343,8 @@ export default function FloatingChat() {
 
     if (!userText || sending || !targetSessionId) return;
 
+    const shouldSpeakReply = voiceReplyEnabledRef.current;
+    voiceReplyEnabledRef.current = false;
     setText('');
     setSending(true);
 
@@ -331,7 +369,21 @@ export default function FloatingChat() {
         result?.assistantMessage?.text ||
         'AI response မရပါ။';
 
-      sendMessage(assistantText, 'bot', { sessionId: targetSessionId });
+      sendMessage(assistantText, 'bot', {
+        sessionId: targetSessionId,
+        metadata: {
+          knowledgeSources:
+            result?.knowledgeSources ||
+            result?.assistantMessage?.knowledgeSources ||
+            [],
+          toolCalls: result?.toolCalls || result?.assistantMessage?.toolCalls || [],
+          intent: result?.intent || result?.assistantMessage?.intent || null,
+        },
+      });
+
+      if (shouldSpeakReply) {
+        speak(assistantText);
+      }
     } catch (err) {
       sendMessage(
         err.message || 'AI assistant ချိတ်ဆက်မရပါ။ Backend/Ollama ကိုစစ်ပါ။',
@@ -345,7 +397,20 @@ export default function FloatingChat() {
 
   function handleClose() {
     setHistoryOpen(false);
+    if (listening) stopListening();
+    stopSpeaking();
     close();
+  }
+
+  function handleMicPress() {
+    if (sending) return;
+
+    if (listening) {
+      stopListening();
+      return;
+    }
+
+    startListening();
   }
 
   function handleNewChat() {
@@ -418,30 +483,55 @@ export default function FloatingChat() {
               onContentSizeChange={() => {
                 listRef.current?.scrollToEnd({ animated: true });
               }}
-              renderItem={({ item }) => (
-                <View
-                  style={[
-                    styles.messageRow,
-                    item.from === 'user' ? styles.userMsg : styles.botMsg,
-                  ]}
-                >
-                  <Text
-                    style={{
-                      color: item.from === 'user' ? '#fff' : theme.text,
-                    }}
+              renderItem={({ item }) => {
+                const isUser = item.from === 'user';
+                const sourceTitles = Array.isArray(item.knowledgeSources)
+                  ? item.knowledgeSources
+                      .map(source => source?.title)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                  : [];
+
+                return (
+                  <View
+                    style={[
+                      styles.messageRow,
+                      isUser ? styles.userMsg : styles.botMsg,
+                    ]}
                   >
-                    {item.text}
-                  </Text>
-                </View>
-              )}
+                    <Text
+                      style={{
+                        color: isUser ? '#fff' : theme.text,
+                      }}
+                    >
+                      {item.text}
+                    </Text>
+
+                    {!isUser && sourceTitles.length > 0 && (
+                      <Text style={[styles.messageMeta, { color: theme.subtext }]}>
+                        Knowledge: {sourceTitles.join(', ')}
+                      </Text>
+                    )}
+
+                    {!isUser && item.toolCalls?.length > 0 && (
+                      <Text style={[styles.messageMeta, { color: theme.subtext }]}>
+                        Tools: {item.toolCalls.length}
+                      </Text>
+                    )}
+                  </View>
+                );
+              }}
             />
 
             <View style={styles.inputRow}>
               <TextInput
                 ref={inputRef}
                 value={text}
-                onChangeText={setText}
-                placeholder="Type a message"
+                onChangeText={nextText => {
+                  voiceReplyEnabledRef.current = false;
+                  setText(nextText);
+                }}
+                placeholder={listening ? 'Listening...' : 'Type a message'}
                 placeholderTextColor={theme.subtext}
                 style={[
                   styles.input,
@@ -457,6 +547,26 @@ export default function FloatingChat() {
               />
 
               <TouchableOpacity
+                onPress={handleMicPress}
+                disabled={sending}
+                accessibilityLabel={micAccessibilityLabel}
+                accessibilityHint={micAccessibilityHint}
+                style={[
+                  styles.micButton,
+                  {
+                    backgroundColor: listening ? theme.primary : theme.border,
+                    opacity: sending || micUnavailable ? 0.65 : 1,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={micIconName}
+                  size={19}
+                  color={listening ? theme.primaryText : theme.text}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 onPress={handleSend}
                 disabled={sending || !text.trim()}
                 style={[
@@ -470,7 +580,7 @@ export default function FloatingChat() {
                 {sending ? (
                   <ActivityIndicator size="small" color={theme.primaryText} />
                 ) : (
-                  <Text style={{ color: theme.primaryText }}>Send</Text>
+                  <Ionicons name="send" size={18} color={theme.primaryText} />
                 )}
               </TouchableOpacity>
             </View>
@@ -710,6 +820,11 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     backgroundColor: 'transparent',
   },
+  messageMeta: {
+    marginTop: 6,
+    fontSize: 11,
+    lineHeight: 16,
+  },
   inputRow: {
     flexDirection: 'row',
     padding: 12,
@@ -726,13 +841,19 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     includeFontPadding: true,
   },
+  micButton: {
+    marginLeft: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sendButton: {
     marginLeft: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    width: 52,
+    height: 44,
     borderRadius: 8,
-    minWidth: 58,
-    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -35,6 +35,10 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SmartRes uses the microphone for assistant voice commands.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>SmartRes uses speech recognition to turn voice commands into chat text.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

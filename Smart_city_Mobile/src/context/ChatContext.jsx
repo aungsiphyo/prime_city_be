@@ -34,12 +34,13 @@ function buildTitle(text) {
   return normalized.length > 34 ? `${normalized.slice(0, 34)}...` : normalized;
 }
 
-function createLocalMessage(text, from) {
+function createLocalMessage(text, from, extras = {}) {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     text,
     from,
     createdAt: new Date().toISOString(),
+    ...extras,
   };
 }
 
@@ -172,7 +173,7 @@ export function ChatProvider({ children }) {
   const sendMessage = useCallback(
     (text, from = 'user', options = {}) => {
       const sessionId = options.sessionId ?? activeSessionId;
-      const message = createLocalMessage(text, from);
+      const message = createLocalMessage(text, from, options.metadata ?? {});
 
       if (!sessionId) return message;
 
