@@ -176,6 +176,11 @@ export default function ChatSheet({ visible, onClose }) {
               Used {item.toolCalls.length} MCP tool{item.toolCalls.length > 1 ? 's' : ''}
             </Text>
           )}
+          {item.knowledgeSources?.length > 0 && (
+            <Text style={[styles.toolHint, { color: theme.subtext }]}>
+              Knowledge: {item.knowledgeSources.map(source => source.title).filter(Boolean).slice(0, 2).join(', ')}
+            </Text>
+          )}
         </View>
       </View>
     );
