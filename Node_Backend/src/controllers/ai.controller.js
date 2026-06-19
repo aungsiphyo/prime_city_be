@@ -1,4 +1,9 @@
 const aiService = require("../services/ai.service");
+const AiChat = require("../models/AiChat");
+
+function getUserId(user) {
+  return user?.id || user?._id || null;
+}
 
 function validateChatBody(body) {
   const errors = [];
@@ -21,7 +26,41 @@ function validateChatBody(body) {
     errors.push("history must be an array when provided");
   }
 
+  if (body.enableRag != null && typeof body.enableRag !== "boolean") {
+    errors.push("enableRag must be a boolean when provided");
+  }
+
+  if (body.ragContext != null && typeof body.ragContext !== "string") {
+    errors.push("ragContext must be a string when provided");
+  }
+
   return errors;
+}
+
+async function persistChatTurn(user, result) {
+  const userId = getUserId(user);
+
+  if (!userId) return;
+
+  await AiChat.create([
+    {
+      userId,
+      conversationId: result.conversationId,
+      role: "user",
+      content: result.userMessage.content,
+    },
+    {
+      userId,
+      conversationId: result.conversationId,
+      role: "assistant",
+      content: result.assistantMessage.content,
+      toolCalls: result.toolCalls || [],
+      knowledgeSources: result.knowledgeSources || [],
+      intent: result.intent || null,
+      model: result.model || "",
+      usedFallback: Boolean(result.usedFallback),
+    },
+  ]);
 }
 
 async function postChat(req, res) {
@@ -34,14 +73,19 @@ async function postChat(req, res) {
       });
     }
 
-    const { message, conversationId, history } = req.body;
+    const { message, conversationId, history, enableRag, ragContext } =
+      req.body;
 
     const result = await aiService.chat({
       message,
       conversationId,
       history,
       user: req.user || null,
+      enableRag: enableRag !== false,
+      audienceHint: ragContext,
     });
+
+    await persistChatTurn(req.user, result);
 
     return res.status(200).json({
       success: true,
@@ -49,9 +93,13 @@ async function postChat(req, res) {
       userMessage: result.userMessage,
       assistantMessage: result.assistantMessage,
       toolCalls: result.toolCalls,
+      knowledgeSources: result.knowledgeSources,
       meta: {
         model: result.model,
         usedFallback: result.usedFallback,
+        intent: result.intent || null,
+        ragUsed: result.knowledgeSources.length > 0,
+        knowledgeSources: result.knowledgeSources,
       },
     });
   } catch (err) {
@@ -63,6 +111,47 @@ async function postChat(req, res) {
   }
 }
 
+async function getMyChatHistory(req, res) {
+  try {
+    const userId = getUserId(req.user);
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(requestedLimit, 200))
+      : 100;
+    const filter = { userId };
+
+    if (req.query.conversationId) {
+      filter.conversationId = String(req.query.conversationId);
+    }
+
+    const chats = await AiChat.find(filter)
+      .sort({ createdAt: 1 })
+      .limit(limit)
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      messages: chats.map((message) => ({
+        id: String(message._id),
+        conversationId: message.conversationId,
+        role: message.role,
+        content: message.content,
+        timestamp: message.createdAt,
+        toolCalls: message.toolCalls || [],
+        knowledgeSources: message.knowledgeSources || [],
+        intent: message.intent || null,
+      })),
+    });
+  } catch (err) {
+    console.error("GET /api/ai/history error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || "Failed to load AI chat history",
+    });
+  }
+}
+
 module.exports = {
   postChat,
+  getMyChatHistory,
 };

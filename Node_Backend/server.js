@@ -233,6 +233,7 @@ app.use("/api/helper-requests", require("./src/routes/helperRequest"));
 app.use("/api/helpers", require("./src/routes/helper"));
 app.use("/api/bills", require("./src/routes/serviceBill"));
 app.use("/api/visitors", require("./src/routes/visitor"));
+app.use("/api/knowledge", require("./src/routes/knowledge.routes"));
 app.use("/api/ai", require("./src/routes/ai.routes"));
 app.use("/api/mcp", require("./src/routes/mcp.routes"));
 

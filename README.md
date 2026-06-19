@@ -101,7 +101,12 @@ The backend reads configuration from `Node_Backend/.env`. Do NOT commit secrets 
 - `EMAIL_USER` / `EMAIL_PASS` — SMTP credentials for sending email
 - `MQTT_URL`, `MQTT_USER`, `MQTT_PASS` — MQTT broker details
 - `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_MS` — (optional) AI integration
-- `AI_SYSTEM_PROMPT` — (optional) system prompt for AI
+- `OLLAMA_NUM_CTX`, `OLLAMA_NUM_PREDICT`, `OLLAMA_TEMPERATURE` — (optional) AI speed/quality tuning
+- `OLLAMA_THINK` — (optional) set `true` only if you want thinking-mode output; default is off for faster chat replies
+- `AI_HISTORY_LIMIT`, `AI_RAG_MAX_DOCS`, `AI_RAG_MAX_CHARS` — (optional) prompt-size tuning
+- `AI_REQUIRE_AUTH` — (optional) set `true` in production to require JWT for `/api/ai/chat`
+- `AI_RATE_LIMIT_ENABLED`, `AI_RATE_LIMIT_MAX`, `AI_RATE_LIMIT_WINDOW_MS` — (optional) AI chat rate-limit controls
+- `AI_SYSTEM_PROMPT`, `AI_RESPONSE_STYLE_PROMPT` — (optional) system prompts for AI
 
 Create a `.env.example` (without values) and add it to the repo to document variables.
 
