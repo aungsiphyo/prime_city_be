@@ -1,0 +1,26 @@
+{
+  "name": "getHelpers",
+  "description": "Get available house helper list for residents",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "limit": {
+        "type": "number",
+        "description": "Maximum number of helpers to return"
+      },
+      "gender": {
+        "type": "string",
+        "enum": ["Male", "Female"],
+        "description": "Optional helper gender filter"
+      },
+      "status": {
+        "type": "string",
+        "description": "Optional helper status filter"
+      },
+      "activeOnly": {
+        "type": "boolean",
+        "description": "When true, only return active helpers"
+      }
+    }
+  }
+}

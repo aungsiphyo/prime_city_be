@@ -8,6 +8,32 @@ const User = require("../models/User");
 const ServiceBill = require("../models/ServiceBill");
 const Visitor = require("../models/Visitor");
 const Report = require("../models/Report");
+const Announcement = require("../models/Announcement");
+const Notification = require("../models/Notification");
+const Helper = require("../models/Helper");
+const HelperRequest = require("../models/HelperRequest");
+
+const BILL_STATUSES = new Set(["Pending", "Paid", "Overdue"]);
+const ANNOUNCEMENT_TYPES = new Set(["General", "Maintenance", "Event"]);
+const HELPER_GENDER_PREFERENCES = new Set([
+  "Male",
+  "Female",
+  "No Preference",
+]);
+
+const RESIDENT_ACCESS_ITEMS = [
+  "View own room information",
+  "View own service bills, unpaid total, and monthly bill total",
+  "View own visitor records",
+  "View community announcements and own notifications",
+  "View available house helpers",
+  "Request a house helper for the linked room",
+  "Create maintenance or repair requests",
+  "Ask parking slot status and recent parking changes",
+  "Ask RFID scan status where allowed by management",
+  "Use SOS guidance and app SOS features",
+  "Ask resident-facing rules, policies, and app guidance",
+];
 
 function getUserId(user) {
   return user?.id || user?._id || null;
@@ -15,6 +41,82 @@ function getUserId(user) {
 
 function isObjectId(value) {
   return mongoose.Types.ObjectId.isValid(String(value || ""));
+}
+
+function normalizeEnum(value, allowedValues) {
+  const text = String(value || "").trim().toLowerCase();
+
+  if (!text) return null;
+
+  return Array.from(allowedValues).find(
+    (allowedValue) => allowedValue.toLowerCase() === text,
+  ) || null;
+}
+
+function parseLimit(value, fallback = 5, max = 20) {
+  const parsed = Number(value);
+  const safeValue = Number.isFinite(parsed) ? parsed : fallback;
+
+  return Math.min(Math.max(safeValue, 1), max);
+}
+
+function sumAmounts(items) {
+  return items.reduce((total, item) => total + Number(item.amount || 0), 0);
+}
+
+function mapBill(bill) {
+  return {
+    id: String(bill._id),
+    amount: bill.amount,
+    status: bill.status,
+    dueDate: bill.due_date,
+    createdAt: bill.created_at,
+  };
+}
+
+function resolveMonthRange(args = {}) {
+  const now = new Date();
+  const parsedYear = Number(args.year);
+  const parsedMonth = Number(args.month);
+  const year = Number.isInteger(parsedYear) && parsedYear >= 1970
+    ? parsedYear
+    : now.getFullYear();
+  const month = Number.isInteger(parsedMonth) && parsedMonth >= 1 && parsedMonth <= 12
+    ? parsedMonth
+    : now.getMonth() + 1;
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 1);
+
+  return {
+    year,
+    month,
+    start,
+    end,
+    label: `${year}-${String(month).padStart(2, "0")}`,
+  };
+}
+
+function normalizeGenderPreference(value) {
+  const exact = normalizeEnum(value, HELPER_GENDER_PREFERENCES);
+
+  if (exact) return exact;
+
+  const text = String(value || "").trim().toLowerCase();
+
+  if (["male", "man", "အမျိုးသား", "ယောက်ျား"].includes(text)) return "Male";
+  if (["female", "woman", "အမျိုးသမီး", "မိန်းကလေး"].includes(text)) {
+    return "Female";
+  }
+
+  return "No Preference";
+}
+
+function normalizeHelperType(value) {
+  const text = String(value || "").trim();
+
+  if (!text) return "House Helper";
+
+  return text.slice(0, 80);
 }
 
 async function getCurrentUser(user) {
@@ -222,7 +324,7 @@ async function getMyRoom(user) {
   };
 }
 
-async function getMyBills(user) {
+async function getMyBills(user, args = {}) {
   const resolved = await resolveCurrentRoom(user);
 
   if (!resolved.found) {
@@ -231,28 +333,53 @@ async function getMyBills(user) {
       message: resolved.message,
       bills: [],
       totalOutstanding: 0,
+      monthlySummary: null,
     };
   }
 
-  const bills = await ServiceBill.find({ room_id: resolved.room._id })
-    .sort({ created_at: -1 })
-    .limit(5)
-    .lean();
-  const totalOutstanding = bills
-    .filter((bill) => bill.status !== "Paid")
-    .reduce((total, bill) => total + Number(bill.amount || 0), 0);
+  const limit = parseLimit(args.limit, 5, 20);
+  const monthRange = resolveMonthRange(args);
+  const status = normalizeEnum(args.status, BILL_STATUSES);
+  const roomFilter = { room_id: resolved.room._id };
+  const statusFilter = status ? { status } : {};
+
+  const [bills, outstandingBills, monthlyBills] = await Promise.all([
+    ServiceBill.find({ ...roomFilter, ...statusFilter })
+      .sort({ created_at: -1 })
+      .limit(limit)
+      .lean(),
+    ServiceBill.find({ ...roomFilter, status: { $ne: "Paid" } })
+      .select("amount status")
+      .lean(),
+    ServiceBill.find({
+      ...roomFilter,
+      ...statusFilter,
+      due_date: { $gte: monthRange.start, $lt: monthRange.end },
+    })
+      .sort({ due_date: 1, created_at: -1 })
+      .lean(),
+  ]);
+  const totalOutstanding = sumAmounts(outstandingBills);
+  const monthlyPaid = monthlyBills.filter((bill) => bill.status === "Paid");
+  const monthlyUnpaid = monthlyBills.filter((bill) => bill.status !== "Paid");
+  const monthlyOverdue = monthlyBills.filter((bill) => bill.status === "Overdue");
 
   return {
     found: true,
     roomNumber: resolved.room.room_name,
     totalOutstanding,
-    bills: bills.map((bill) => ({
-      id: String(bill._id),
-      amount: bill.amount,
-      status: bill.status,
-      dueDate: bill.due_date,
-      createdAt: bill.created_at,
-    })),
+    monthlySummary: {
+      year: monthRange.year,
+      month: monthRange.month,
+      label: monthRange.label,
+      count: monthlyBills.length,
+      totalAmount: sumAmounts(monthlyBills),
+      paidAmount: sumAmounts(monthlyPaid),
+      unpaidAmount: sumAmounts(monthlyUnpaid),
+      overdueAmount: sumAmounts(monthlyOverdue),
+      bills: monthlyBills.map(mapBill),
+    },
+    bills: bills.map(mapBill),
   };
 }
 
@@ -342,6 +469,132 @@ async function createMaintenanceRequest(args = {}, user) {
   };
 }
 
+async function getHelpers(args = {}) {
+  const limit = parseLimit(args.limit, 10, 50);
+  const filter = {};
+
+  if (args.status) {
+    filter.status = String(args.status).trim();
+  } else if (args.activeOnly !== false) {
+    filter.status = "Active";
+  }
+
+  const gender = normalizeEnum(args.gender, new Set(["Male", "Female"]));
+
+  if (gender) {
+    filter.gender = gender;
+  }
+
+  const helpers = await Helper.find(filter)
+    .sort({ created_at: -1 })
+    .limit(limit)
+    .lean();
+
+  return {
+    count: helpers.length,
+    helpers: helpers.map((helper) => ({
+      id: String(helper._id),
+      name: helper.fullname,
+      age: helper.age || null,
+      gender: helper.gender || null,
+      experience: helper.experience || 0,
+      photo: helper.photo || null,
+      status: helper.status || "Active",
+      createdAt: helper.created_at,
+    })),
+  };
+}
+
+async function createHelperRequest(args = {}, user) {
+  const resolved = await resolveCurrentRoom(user);
+
+  if (!resolved.found) {
+    return {
+      created: false,
+      message: resolved.message,
+    };
+  }
+
+  const requestType = normalizeHelperType(args.type || args.serviceType);
+  const genderPreferred = normalizeGenderPreference(args.gender_preferred);
+  const request = await HelperRequest.create({
+    room_id: resolved.room._id,
+    type: requestType,
+    gender_preferred: genderPreferred,
+  });
+
+  return {
+    created: true,
+    requestId: String(request._id),
+    roomNumber: resolved.room.room_name,
+    type: request.type,
+    genderPreferred: request.gender_preferred,
+    status: request.status,
+    createdAt: request.created_at,
+  };
+}
+
+async function getAnnouncements(args = {}, user) {
+  const limit = parseLimit(args.limit, 5, 20);
+  const filter = {};
+  const q = String(args.q || args.query || "").trim();
+
+  const type = normalizeEnum(args.type, ANNOUNCEMENT_TYPES);
+
+  if (type) {
+    filter.type = type;
+  }
+
+  if (q) {
+    const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    filter.$or = [{ title: regex }, { message: regex }];
+  }
+
+  const currentUser = await getCurrentUser(user);
+  const notificationFilter = currentUser ? { user_id: currentUser._id } : null;
+  const [announcements, notifications] = await Promise.all([
+    Announcement.find(filter).sort({ created_at: -1 }).limit(limit).lean(),
+    notificationFilter
+      ? Notification.find(notificationFilter)
+          .sort({ created_at: -1 })
+          .limit(limit)
+          .lean()
+      : Promise.resolve([]),
+  ]);
+
+  return {
+    count: announcements.length,
+    notificationCount: notifications.length,
+    announcements: announcements.map((announcement) => ({
+      id: String(announcement._id),
+      title: announcement.title,
+      message: announcement.message,
+      type: announcement.type,
+      createdAt: announcement.created_at,
+    })),
+    notifications: notifications.map((notification) => ({
+      id: String(notification._id),
+      title: notification.title,
+      message: notification.message,
+      type: notification.type,
+      isRead: notification.is_read,
+      createdAt: notification.created_at,
+    })),
+  };
+}
+
+async function getResidentAccessInfo(user) {
+  const currentUser = await getCurrentUser(user);
+
+  return {
+    role: currentUser?.role || user?.role || "Citizen",
+    isLoggedIn: Boolean(currentUser || getUserId(user)),
+    permissions: RESIDENT_ACCESS_ITEMS,
+    privacyNote:
+      "Resident data is limited to the logged-in user's linked room/account where applicable.",
+  };
+}
+
 async function runTool(name, args = {}, user) {
   switch (name) {
     case "getParkingStatus":
@@ -360,13 +613,25 @@ async function runTool(name, args = {}, user) {
       return getMyRoom(user);
 
     case "getMyBills":
-      return getMyBills(user);
+      return getMyBills(user, args);
 
     case "getMyVisitors":
       return getMyVisitors(user, args);
 
     case "createMaintenanceRequest":
       return createMaintenanceRequest(args, user);
+
+    case "getHelpers":
+      return getHelpers(args);
+
+    case "createHelperRequest":
+      return createHelperRequest(args, user);
+
+    case "getAnnouncements":
+      return getAnnouncements(args, user);
+
+    case "getResidentAccessInfo":
+      return getResidentAccessInfo(user);
 
     default:
       throw new Error(`Unknown tool: ${name}`);

@@ -255,7 +255,7 @@ export default function ChatSheet({ visible, onClose }) {
                       Ask me anything
                     </Text>
                     <Text style={[styles.emptySub, { color: theme.subtext }]}>
-                      Bills, visitors, parking, announcements — powered by RAG and MCP tools.
+                      Bills, helpers, visitors, parking, announcements — powered by RAG and MCP tools.
                     </Text>
                   </View>
                 }
