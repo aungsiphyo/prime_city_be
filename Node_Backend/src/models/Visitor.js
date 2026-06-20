@@ -1,6 +1,14 @@
 const mongoose = require("mongoose");
 const { generateVisitorUid } = require("../utils/generateUid");
 
+function normalizeRfidUid(value) {
+  const normalized = String(value || "")
+    .replace(/[^a-fA-F0-9]/g, "")
+    .toUpperCase();
+
+  return normalized || undefined;
+}
+
 const VisitorSchema = new mongoose.Schema(
   {
     visitor_uid: {
@@ -9,6 +17,13 @@ const VisitorSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
       immutable: true,
+    },
+    rfid_uid: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+      set: normalizeRfidUid,
     },
     firstName: { type: String, trim: true, default: "" },
     lastName: { type: String, trim: true, default: "" },

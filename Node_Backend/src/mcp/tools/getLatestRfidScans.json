@@ -1,0 +1,22 @@
+{
+  "name": "getLatestRfidScans",
+  "description": "Get latest RFID scan logs from the database",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "limit": {
+        "type": "number",
+        "description": "Maximum number of RFID scan logs to return"
+      },
+      "valid": {
+        "type": "boolean",
+        "description": "Filter by valid or invalid scans"
+      },
+      "personType": {
+        "type": "string",
+        "enum": ["resident", "visitor"],
+        "description": "Filter RFID scans by person type"
+      }
+    }
+  }
+}

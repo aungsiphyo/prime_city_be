@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Parking = require("../models/Parking");
+const ParkingEvent = require("../models/ParkingEvent");
 
 function isValidType(type) {
   return ["visitor", "resident"].includes(type);
@@ -74,6 +75,51 @@ router.get("/", async (req, res) => {
     res.json({
       success: true,
       data: parking,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/parking/events/history
+router.get("/events/history", async (req, res) => {
+  try {
+    const { type, page = 1, limit = 50 } = req.query;
+    const filter = {};
+
+    if (type) {
+      if (!isValidType(type)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid parking type",
+        });
+      }
+
+      filter.type = type;
+    }
+
+    const pageNumber = Math.max(Number(page), 1);
+    const limitNumber = Math.max(Number(limit), 1);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const [events, total] = await Promise.all([
+      ParkingEvent.find(filter)
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limitNumber)
+        .lean(),
+      ParkingEvent.countDocuments(filter),
+    ]);
+
+    res.json({
+      success: true,
+      data: events,
+      pagination: {
+        total,
+        page: pageNumber,
+        limit: limitNumber,
+        pages: Math.ceil(total / limitNumber),
+      },
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

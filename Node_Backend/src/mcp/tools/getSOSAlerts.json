@@ -3,6 +3,15 @@
   "description": "Retrieve recent SOS alerts",
   "parameters": {
     "type": "object",
-    "properties": {}
+    "properties": {
+      "limit": {
+        "type": "number",
+        "description": "Maximum number of SOS alerts to return"
+      },
+      "status": {
+        "type": "string",
+        "description": "Filter SOS alerts by status"
+      }
+    }
   }
 }

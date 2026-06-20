@@ -20,6 +20,7 @@ router.get("/profile", protect, async (req, res) => {
       user: {
         id: user._id,
         resident_uid: user.resident_uid || null,
+        rfid_uid: user.rfid_uid || null,
         fullname: user.fullname,
         email: user.email,
         phone: user.phone,
