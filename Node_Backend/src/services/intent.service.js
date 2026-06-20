@@ -7,6 +7,10 @@ const TOOL_INTENTS = new Set([
   "getMyBills",
   "getMyVisitors",
   "createMaintenanceRequest",
+  "getHelpers",
+  "createHelperRequest",
+  "getAnnouncements",
+  "getResidentAccessInfo",
 ]);
 
 function normalizeMessage(message) {
@@ -17,9 +21,88 @@ function hasAny(text, terms) {
   return terms.some((term) => text.includes(term));
 }
 
+function buildBillArgs(message) {
+  const text = normalizeMessage(message);
+  const args = {};
+  const now = new Date();
+  const yearMatch = String(message || "").match(/\b(19\d{2}|20\d{2})\b/);
+  const monthNames = {
+    january: 1,
+    jan: 1,
+    february: 2,
+    feb: 2,
+    march: 3,
+    mar: 3,
+    april: 4,
+    apr: 4,
+    may: 5,
+    june: 6,
+    jun: 6,
+    july: 7,
+    jul: 7,
+    august: 8,
+    aug: 8,
+    september: 9,
+    sep: 9,
+    october: 10,
+    oct: 10,
+    november: 11,
+    nov: 11,
+    december: 12,
+    dec: 12,
+  };
+
+  args.year = yearMatch ? Number(yearMatch[1]) : now.getFullYear();
+  args.month = now.getMonth() + 1;
+
+  for (const [name, month] of Object.entries(monthNames)) {
+    if (text.includes(name)) {
+      args.month = month;
+      break;
+    }
+  }
+
+  if (hasAny(text, ["last month", "ပြီးခဲ့တဲ့လ", "ပြီးခဲ့သောလ"])) {
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    args.year = lastMonth.getFullYear();
+    args.month = lastMonth.getMonth() + 1;
+  }
+
+  if (hasAny(text, ["paid", "ပေးပြီး", "ရှင်းပြီး"])) args.status = "Paid";
+  if (hasAny(text, ["overdue", "နောက်ကျ", "ကျော်"])) args.status = "Overdue";
+  if (hasAny(text, ["pending", "unpaid", "မပေး", "မရှင်း"])) args.status = "Pending";
+
+  return args;
+}
+
+function buildHelperRequestArgs(message) {
+  const original = String(message || "").trim();
+  const text = normalizeMessage(message);
+  let type = "House Helper";
+
+  if (hasAny(text, ["clean", "cleaning", "သန့်ရှင်း", "သန့်ရှင်း"])) {
+    type = "Cleaning";
+  } else if (hasAny(text, ["laundry", "လျှော်", "အဝတ်"])) {
+    type = "Laundry";
+  } else if (hasAny(text, ["cook", "cooking", "ချက်ပြုတ်", "ထမင်း"])) {
+    type = "Cooking";
+  }
+
+  return {
+    type,
+    gender_preferred: hasAny(text, ["female", "အမျိုးသမီး", "မိန်းကလေး"])
+      ? "Female"
+      : hasAny(text, ["male", "အမျိုးသား", "ယောက်ျား"])
+        ? "Male"
+        : "No Preference",
+    note: original,
+  };
+}
+
 function classifyIntent(message) {
   const text = normalizeMessage(message);
   const compact = text.replace(/[!?.\s]+/g, " ").trim();
+  const compactText = text.replace(/\s+/g, "");
 
   if (!text) {
     return { name: "generalChat", confidence: 0, toolName: null };
@@ -32,6 +115,63 @@ function classifyIntent(message) {
     hasAny(text, ["အရေးပေါ်", "ကယ်ပါ", "မီးလောင်", "ဆေးရုံ", "ambulance"])
   ) {
     return { name: "emergency", confidence: 1, toolName: null };
+  }
+
+  if (
+    hasAny(text, ["access", "permission", "permissions", "right", "rights", "ရပိုင်", "ခွင့်", "ခွင့်"]) &&
+    hasAny(text, ["resident", "citizen", "user", "နေထိုင်", "သုံး", "မေး"])
+  ) {
+    return {
+      name: "getResidentAccessInfo",
+      confidence: 0.94,
+      toolName: "getResidentAccessInfo",
+    };
+  }
+
+  if (
+    (hasAny(text, ["announcement", "announcements", "notice", "notification", "အသိပေး", "ကြေညာ", "အကြောင်းကြား"]) ||
+      hasAny(compactText, ["အကြောင်းကြား", "အကြောင်းကြားစာ"])) &&
+    hasAny(text, ["latest", "recent", "list", "စာရင်း", "နောက်ဆုံး", "အသစ်", "ရှိ", "ပြ", "ဘာ"])
+  ) {
+    return {
+      name: "getAnnouncements",
+      confidence: 0.92,
+      toolName: "getAnnouncements",
+    };
+  }
+
+  const asksHelper =
+    hasAny(text, [
+      "helper",
+      "house helper",
+      "maid",
+      "cleaner",
+      "အိမ်အကူ",
+      "အိမ္အကူ",
+      "အကူ",
+    ]) || hasAny(compactText, ["အိမ်အကူ", "အိမ္အကူ"]);
+
+  if (
+    asksHelper &&
+    hasAny(text, ["request", "တောင်း", "တောင်းခံ", "ခေါ်", "လိုချင်", "ယူ", "တင်"])
+  ) {
+    return {
+      name: "createHelperRequest",
+      confidence: 0.9,
+      toolName: "createHelperRequest",
+      args: buildHelperRequestArgs(message),
+    };
+  }
+
+  if (
+    asksHelper &&
+    hasAny(text, ["list", "စာရင်း", "ကြည့်", "ကြည့်", "ပြ", "ရှိ", "available"])
+  ) {
+    return {
+      name: "getHelpers",
+      confidence: 0.88,
+      toolName: "getHelpers",
+    };
   }
 
   const asksRule = hasAny(text, [
@@ -105,7 +245,12 @@ function classifyIntent(message) {
     hasAny(text, ["bill", "bills", "invoice", "payment", "ကြေး", "ဘေလ်", "ငွေ"]) &&
     !asksRule
   ) {
-    return { name: "getMyBills", confidence: 0.88, toolName: "getMyBills" };
+    return {
+      name: "getMyBills",
+      confidence: 0.88,
+      toolName: "getMyBills",
+      args: buildBillArgs(message),
+    };
   }
 
   if (

@@ -1,8 +1,26 @@
 {
   "name": "getMyBills",
-  "description": "Get recent service bills for the current logged-in resident's linked room",
+  "description": "Get recent service bills, unpaid total, and monthly bill total for the current logged-in resident's linked room",
   "parameters": {
     "type": "object",
-    "properties": {}
+    "properties": {
+      "month": {
+        "type": "number",
+        "description": "Month number from 1 to 12 for the monthly bill summary. Defaults to current month."
+      },
+      "year": {
+        "type": "number",
+        "description": "Four-digit year for the monthly bill summary. Defaults to current year."
+      },
+      "status": {
+        "type": "string",
+        "enum": ["Pending", "Paid", "Overdue"],
+        "description": "Optional bill status filter"
+      },
+      "limit": {
+        "type": "number",
+        "description": "Maximum number of recent bills to return"
+      }
+    }
   }
 }

@@ -1,0 +1,18 @@
+{
+  "name": "createHelperRequest",
+  "description": "Create a house helper request for the current logged-in resident's linked room",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "type": {
+        "type": "string",
+        "description": "Requested helper service type, such as House Helper, Cleaning, Laundry, or Cooking"
+      },
+      "gender_preferred": {
+        "type": "string",
+        "enum": ["Male", "Female", "No Preference"],
+        "description": "Preferred helper gender"
+      }
+    }
+  }
+}

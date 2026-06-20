@@ -34,8 +34,8 @@ You are SmartRes AI, a helpful assistant for a smart residential community.
 Rules:
 - Reply in Myanmar language unless the user uses English.
 - When replying in Myanmar, use Myanmar Unicode script only. Do not use romanized Burmese unless the user explicitly asks for romanization.
-- You can help with parking, rooms, bills, visitors, SOS, announcements, and community services.
-- You understand intents such as parking status, room info, bills, visitors, maintenance requests, RAG policy search, SOS, and general chat.
+- You can help with parking, rooms, bills, visitors, SOS, announcements, notifications, house helpers, helper requests, and community services.
+- You understand intents such as parking status, room info, bills, monthly bill totals, visitors, helper lists, helper requests, maintenance requests, resident access permissions, notices, RAG policy search, SOS, and general chat.
 - Never expose private data.
 - Use database/tool data only when provided.
 - Never guess real-time database values such as parking slots, room data, bills, visitors, or maintenance request status.
@@ -88,7 +88,18 @@ function isToolQuestion(message) {
     text.includes("ပါကင်") ||
     text.includes("ကားရပ်") ||
     text.includes("room") ||
-    text.includes("အခန်း")
+    text.includes("အခန်း") ||
+    text.includes("bill") ||
+    text.includes("ဘေလ်") ||
+    text.includes("helper") ||
+    text.includes("အိမ်အကူ") ||
+    text.includes("announcement") ||
+    text.includes("notice") ||
+    text.includes("notification") ||
+    text.includes("အသိပေး") ||
+    text.includes("ကြေညာ") ||
+    text.includes("access") ||
+    text.includes("permission")
   );
 }
 
@@ -124,6 +135,12 @@ function formatDate(value) {
   if (Number.isNaN(date.getTime())) return "မသတ်မှတ်ထားပါ";
 
   return date.toISOString().slice(0, 10);
+}
+
+function formatAmount(value) {
+  const amount = Number(value || 0);
+
+  return amount.toLocaleString("en-US");
 }
 
 function buildToolAssistantContent(toolName, result) {
@@ -190,8 +207,32 @@ function buildToolAssistantContent(toolName, result) {
       return `သင့် bill data မတွေ့သေးပါ။ ${result.message || "Login/room link ကိုစစ်ပါ။"}`;
     }
 
-    if (!result.bills.length) {
-      return `အခန်း ${result.roomNumber} အတွက် recent bill မတွေ့ပါ။`;
+    const summary = result.monthlySummary;
+
+    if (!result.bills.length && !summary?.count) {
+      return `အခန်း ${result.roomNumber} အတွက် bill data မတွေ့ပါ။`;
+    }
+
+    if (summary) {
+      const latest = result.bills[0];
+      const latestText = latest
+        ? ` နောက်ဆုံး bill က ${formatAmount(latest.amount)} (${latest.status}), due date ${formatDate(latest.dueDate)} ပါ။`
+        : "";
+
+      if (!summary.count) {
+        return (
+          `အခန်း ${result.roomNumber} အတွက် ${summary.label} လ bill မတွေ့ပါ။ ` +
+          `မရှင်းရသေးတဲ့စုစုပေါင်းက ${formatAmount(result.totalOutstanding)} ဖြစ်ပါတယ်။` +
+          latestText
+        );
+      }
+
+      return (
+        `အခန်း ${result.roomNumber} အတွက် ${summary.label} လ bill စုစုပေါင်း ${formatAmount(summary.totalAmount)} ဖြစ်ပါတယ်။ ` +
+        `မရှင်းရသေးတာ ${formatAmount(summary.unpaidAmount)}, ပေးပြီးတာ ${formatAmount(summary.paidAmount)} ပါ။ ` +
+        `လက်ရှိ unpaid total အကုန်ပေါင်း ${formatAmount(result.totalOutstanding)} ဖြစ်ပါတယ်။` +
+        latestText
+      );
     }
 
     const latest = result.bills[0];
@@ -230,6 +271,71 @@ function buildToolAssistantContent(toolName, result) {
     }
 
     return `Maintenance request မတင်နိုင်သေးပါ။ ${result.message || "Login/room link ကိုစစ်ပါ။"}`;
+  }
+
+  if (toolName === "getHelpers") {
+    if (!result.helpers.length) {
+      return "လက်ရှိ Active ဖြစ်နေတဲ့ အိမ်အကူစာရင်း မတွေ့သေးပါ။";
+    }
+
+    const helperList = result.helpers
+      .slice(0, 5)
+      .map((helper, index) => {
+        const experience = Number(helper.experience || 0);
+        const expText = experience ? `, experience ${experience} နှစ်` : "";
+        const genderText = helper.gender ? `, ${helper.gender}` : "";
+        return `${index + 1}. ${helper.name}${genderText}${expText}`;
+      })
+      .join(" ");
+
+    return `အိမ်အကူ ${result.count} ယောက်တွေ့ပါတယ်။ ${helperList}`;
+  }
+
+  if (toolName === "createHelperRequest") {
+    if (result.created) {
+      return (
+        `အိမ်အကူ request တင်ပြီးပါပြီ။ ` +
+        `Room ${result.roomNumber}, type ${result.type}, preference ${result.genderPreferred}, status ${result.status}, request ID ${result.requestId} ဖြစ်ပါတယ်။`
+      );
+    }
+
+    return `အိမ်အကူ request မတင်နိုင်သေးပါ။ ${result.message || "Login/room link ကိုစစ်ပါ။"}`;
+  }
+
+  if (toolName === "getAnnouncements") {
+    if (!result.announcements.length && !result.notifications.length) {
+      return "လက်ရှိ announcement/notification မတွေ့သေးပါ။";
+    }
+
+    const latestAnnouncement = result.announcements[0];
+    const latestNotification = result.notifications[0];
+    const parts = [];
+
+    if (latestAnnouncement) {
+      parts.push(
+        `နောက်ဆုံး announcement က "${latestAnnouncement.title}" ဖြစ်ပြီး ${latestAnnouncement.message}`,
+      );
+    }
+
+    if (latestNotification) {
+      parts.push(
+        `သင့် notification နောက်ဆုံးတစ်ခုက "${latestNotification.title}" ဖြစ်ပါတယ်။ ${latestNotification.message}`,
+      );
+    }
+
+    return parts.join(" ");
+  }
+
+  if (toolName === "getResidentAccessInfo") {
+    const permissions = result.permissions
+      .slice(0, 8)
+      .map((permission, index) => `${index + 1}. ${permission}`)
+      .join(" ");
+
+    return (
+      `Resident/User အနေနဲ့ မေးလို့ရတဲ့ အဓိကအချက်တွေက ${permissions} ဖြစ်ပါတယ်။ ` +
+      "ကိုယ်ပိုင် room/account data တွေက login user နဲ့ချိတ်ထားတဲ့ data ကိုပဲပြပါတယ်။"
+    );
   }
 
   return "Tool result ရရှိပါတယ်။";
@@ -338,6 +444,55 @@ async function manualToolContext(message, user) {
     const result = await runTool("getMyRoom", {}, user);
     return {
       toolName: "getMyRoom",
+      result,
+    };
+  }
+
+  if (text.includes("bill") || text.includes("ဘေလ်") || text.includes("ငွေ")) {
+    const result = await runTool("getMyBills", {}, user);
+    return {
+      toolName: "getMyBills",
+      result,
+    };
+  }
+
+  if (
+    text.includes("helper") ||
+    text.includes("maid") ||
+    text.includes("အိမ်အကူ")
+  ) {
+    const result = await runTool("getHelpers", {}, user);
+    return {
+      toolName: "getHelpers",
+      result,
+    };
+  }
+
+  if (
+    text.includes("announcement") ||
+    text.includes("notice") ||
+    text.includes("notification") ||
+    text.includes("အသိပေး") ||
+    text.includes("ကြေညာ") ||
+    text.includes("အကြောင်းကြား")
+  ) {
+    const result = await runTool("getAnnouncements", {}, user);
+    return {
+      toolName: "getAnnouncements",
+      result,
+    };
+  }
+
+  if (
+    text.includes("access") ||
+    text.includes("permission") ||
+    text.includes("ရပိုင်") ||
+    text.includes("ခွင့်") ||
+    text.includes("ခွင့်")
+  ) {
+    const result = await runTool("getResidentAccessInfo", {}, user);
+    return {
+      toolName: "getResidentAccessInfo",
       result,
     };
   }

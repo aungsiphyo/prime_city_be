@@ -1,0 +1,8 @@
+{
+  "name": "getResidentAccessInfo",
+  "description": "Explain what a resident user can access or ask the AI assistant about",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}
