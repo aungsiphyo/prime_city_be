@@ -1,17 +1,109 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const router = express.Router();
 const Room = require("../models/Room");
+const User = require("../models/User");
+
+function isObjectId(value) {
+  return mongoose.Types.ObjectId.isValid(String(value || ""));
+}
+
+async function buildRoomPayload(body, existingRoom = null) {
+  const payload = { ...body };
+
+  if (Object.prototype.hasOwnProperty.call(body, "resident_id")) {
+    const residentId = String(body.resident_id || "").trim();
+
+    if (!residentId) {
+      payload.resident_id = null;
+      payload.owner_name = "";
+      if (!body.status && existingRoom?.status === "Occupied") {
+        payload.status = "Available";
+      }
+      return payload;
+    }
+
+    if (!isObjectId(residentId)) {
+      const err = new Error("resident_id must be a valid user id");
+      err.status = 400;
+      throw err;
+    }
+
+    const resident = await User.findById(residentId)
+      .select("_id fullname")
+      .lean();
+
+    if (!resident) {
+      const err = new Error("Resident user not found");
+      err.status = 404;
+      throw err;
+    }
+
+    const existingAssignment = await Room.findOne({
+      resident_id: resident._id,
+      ...(existingRoom?._id ? { _id: { $ne: existingRoom._id } } : {}),
+    }).lean();
+
+    if (existingAssignment) {
+      const err = new Error("Resident is already assigned to another room");
+      err.status = 400;
+      throw err;
+    }
+
+    payload.resident_id = resident._id;
+    payload.owner_name = resident.fullname;
+    if (!body.status) payload.status = "Occupied";
+  }
+
+  if (typeof body.owner_name === "string") {
+    payload.owner_name = body.owner_name.trim();
+  }
+
+  return payload;
+}
+
+async function syncResidentRoomLink(room, previousResidentId = null) {
+  if (!room) return;
+
+  const roomId = String(room._id);
+  const roomName = String(room.room_name || "");
+  const currentResidentId = room.resident_id ? String(room.resident_id) : null;
+  const previousId = previousResidentId ? String(previousResidentId) : null;
+
+  if (previousId && previousId !== currentResidentId) {
+    await User.updateOne(
+      { _id: previousId, room_id: { $in: [roomId, roomName] } },
+      { $set: { room_id: "" } },
+    );
+  }
+
+  if (currentResidentId) {
+    await User.findByIdAndUpdate(currentResidentId, {
+      $set: { room_id: roomId },
+    });
+  }
+}
+
+function populateRoom(query) {
+  return query.populate(
+    "resident_id",
+    "fullname email phone role resident_uid room_id",
+  );
+}
 
 router.post("/", async (req, res) => {
   try {
-    const newRoom = new Room(req.body);
-    const savedRoom = await newRoom.save();
-    res.status(201).json(savedRoom);
+    const payload = await buildRoomPayload(req.body);
+    const savedRoom = await new Room(payload).save();
+    await syncResidentRoomLink(savedRoom);
+
+    const populatedRoom = await populateRoom(Room.findById(savedRoom._id));
+    res.status(201).json(populatedRoom);
   } catch (error) {
     if (error.code === 11000) {
       return res.status(400).json({ message: "Room name must be unique." });
     }
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
@@ -19,8 +111,9 @@ router.get("/", async (req, res) => {
   try {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
+    if (req.query.resident_id) filter.resident_id = req.query.resident_id;
 
-    const rooms = await Room.find(filter);
+    const rooms = await populateRoom(Room.find(filter).sort({ room_name: 1 }));
     res.status(200).json(rooms);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -29,7 +122,7 @@ router.get("/", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
-    const room = await Room.findById(req.id);
+    const room = await populateRoom(Room.findById(req.params.id));
     if (!room) return res.status(404).json({ message: "Room not found" });
     res.status(200).json(room);
   } catch (error) {
@@ -39,15 +132,22 @@ router.get("/:id", async (req, res) => {
 
 router.put("/:id", async (req, res) => {
   try {
-    const updatedRoom = await Room.findByIdAndUpdate(req.params.id, req.body, {
+    const existingRoom = await Room.findById(req.params.id).lean();
+    if (!existingRoom)
+      return res.status(404).json({ message: "Room not found" });
+
+    const payload = await buildRoomPayload(req.body, existingRoom);
+    const updatedRoom = await Room.findByIdAndUpdate(req.params.id, payload, {
       new: true,
       runValidators: true,
     });
-    if (!updatedRoom)
-      return res.status(404).json({ message: "Room not found" });
-    res.status(200).json(updatedRoom);
+
+    await syncResidentRoomLink(updatedRoom, existingRoom.resident_id);
+
+    const populatedRoom = await populateRoom(Room.findById(updatedRoom._id));
+    res.status(200).json(populatedRoom);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
@@ -56,6 +156,12 @@ router.delete("/:id", async (req, res) => {
     const deletedRoom = await Room.findByIdAndDelete(req.params.id);
     if (!deletedRoom)
       return res.status(404).json({ message: "Room not found" });
+
+    await syncResidentRoomLink(
+      { ...deletedRoom.toObject(), resident_id: null },
+      deletedRoom.resident_id,
+    );
+
     res.status(200).json({ message: "Room successfully deleted" });
   } catch (error) {
     res.status(500).json({ error: error.message });

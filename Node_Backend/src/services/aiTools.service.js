@@ -1,6 +1,9 @@
 const mongoose = require("mongoose");
 const Parking = require("../models/Parking");
+const ParkingEvent = require("../models/ParkingEvent");
+const RfidScanLog = require("../models/RfidScanLog");
 const Room = require("../models/Room");
+const SosAlert = require("../models/SosAlert");
 const User = require("../models/User");
 const ServiceBill = require("../models/ServiceBill");
 const Visitor = require("../models/Visitor");
@@ -33,6 +36,17 @@ async function resolveCurrentRoom(user) {
       message: "Login required",
       user: null,
       room: null,
+    };
+  }
+
+  const linkedRoom = await Room.findOne({ resident_id: currentUser._id }).lean();
+
+  if (linkedRoom) {
+    return {
+      found: true,
+      message: "Room found",
+      user: currentUser,
+      room: linkedRoom,
     };
   }
 
@@ -89,6 +103,104 @@ async function getParkingStatus() {
   };
 }
 
+async function getRecentParkingEvents(args = {}) {
+  const limit = Math.min(Math.max(Number(args.limit || 5), 1), 20);
+  const filter = {};
+
+  if (["visitor", "resident"].includes(args.type)) {
+    filter.type = args.type;
+  }
+
+  const events = await ParkingEvent.find(filter)
+    .sort({ created_at: -1 })
+    .limit(limit)
+    .lean();
+
+  return {
+    count: events.length,
+    events: events.map((event) => ({
+      id: String(event._id),
+      type: event.type,
+      delta: event.delta,
+      source: event.source,
+      deviceId: event.device_id || null,
+      previousUsedSlot: event.previousUsedSlot,
+      usedSlot: event.usedSlot,
+      previousAvailableSlot: event.previousAvailableSlot,
+      availableSlot: event.availableSlot,
+      totalSlot: event.totalSlot,
+      maintenanceSlot: event.maintenanceSlot,
+      createdAt: event.created_at || event.createdAt,
+    })),
+  };
+}
+
+async function getSOSAlerts(args = {}) {
+  const limit = Math.min(Math.max(Number(args.limit || 5), 1), 20);
+  const filter = {};
+
+  if (args.status) filter.status = args.status;
+
+  const alerts = await SosAlert.find(filter)
+    .sort({ created_at: -1 })
+    .limit(limit)
+    .populate("resident_id", "fullname email phone role")
+    .populate("room_id")
+    .lean();
+
+  return {
+    count: alerts.length,
+    alerts: alerts.map((alert) => ({
+      id: String(alert._id),
+      message: alert.message,
+      source: alert.source,
+      status: alert.status,
+      alertType: alert.alert_type,
+      priority: alert.priority,
+      deviceId: alert.device_id || null,
+      residentName: alert.resident_id?.fullname || null,
+      roomName: alert.room_id?.room_name || null,
+      createdAt: alert.created_at,
+      resolvedAt: alert.resolved_at || null,
+    })),
+  };
+}
+
+async function getLatestRfidScans(args = {}) {
+  const limit = Math.min(Math.max(Number(args.limit || 5), 1), 20);
+  const filter = {};
+
+  if (args.valid === true || args.valid === false) filter.valid = args.valid;
+  if (args.personType) filter.personType = args.personType;
+
+  const scans = await RfidScanLog.find(filter)
+    .sort({ scanned_at: -1 })
+    .limit(limit)
+    .populate("resident_id", "fullname email phone role resident_uid rfid_uid")
+    .populate("visitor_id", "fullname phone email visitor_uid rfid_uid")
+    .populate("room_id")
+    .lean();
+
+  return {
+    count: scans.length,
+    scans: scans.map((scan) => ({
+      id: String(scan._id),
+      valid: scan.valid,
+      message: scan.message,
+      source: scan.source,
+      deviceId: scan.device_id || null,
+      hardwareUid: scan.hardwareUid || null,
+      cardCode: scan.cardCode || null,
+      personType: scan.personType || null,
+      matchType: scan.matchType || null,
+      residentName: scan.resident_id?.fullname || null,
+      visitorName: scan.visitor_id?.fullname || null,
+      roomName: scan.room_id?.room_name || null,
+      scannedAt: scan.scanned_at,
+    })),
+  };
+}
+
 async function getMyRoom(user) {
   const resolved = await resolveCurrentRoom(user);
 
@@ -102,9 +214,11 @@ async function getMyRoom(user) {
   return {
     found: true,
     roomNumber: resolved.room.room_name,
+    ownerName: resolved.room.owner_name || resolved.user.fullname || "",
     floor: resolved.room.floor,
     roomType: resolved.room.room_type,
     status: resolved.room.status,
+    residentId: resolved.room.resident_id || resolved.user._id,
   };
 }
 
@@ -232,6 +346,15 @@ async function runTool(name, args = {}, user) {
   switch (name) {
     case "getParkingStatus":
       return getParkingStatus();
+
+    case "getRecentParkingEvents":
+      return getRecentParkingEvents(args);
+
+    case "getSOSAlerts":
+      return getSOSAlerts(args);
+
+    case "getLatestRfidScans":
+      return getLatestRfidScans(args);
 
     case "getMyRoom":
       return getMyRoom(user);

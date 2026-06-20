@@ -1,0 +1,8 @@
+{
+  "name": "getMyBills",
+  "description": "Get recent service bills for the current logged-in resident's linked room",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}

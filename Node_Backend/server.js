@@ -21,7 +21,11 @@ function getLocalLanIp() {
 
   for (const details of Object.values(interfaces)) {
     for (const address of details || []) {
-      if (address?.family === "IPv4" && !address.internal) {
+      if (
+        address?.family === "IPv4" &&
+        !address.internal &&
+        !isDockerBridgeIp(address.address)
+      ) {
         return address.address;
       }
     }
@@ -30,7 +34,21 @@ function getLocalLanIp() {
   return "localhost";
 }
 
-function getRegistrationFormUrl() {
+function isDockerBridgeIp(ip) {
+  return /^172\.(1[6-9]|2\d|3[01])\./.test(String(ip || ""));
+}
+
+function getRequestBaseUrl(req) {
+  const host = req?.get?.("host");
+  if (!host) return "";
+
+  const forwardedProto = req.get("x-forwarded-proto");
+  const protocol = forwardedProto || req.protocol || "http";
+
+  return `${protocol}://${host}`;
+}
+
+function getRegistrationFormUrl(req) {
   if (process.env.REGISTRATION_FORM_URL) {
     return process.env.REGISTRATION_FORM_URL.trim();
   }
@@ -39,10 +57,12 @@ function getRegistrationFormUrl() {
     return `${process.env.PUBLIC_BASE_URL.replace(/\/+$/, "")}/register`;
   }
 
+  const requestBaseUrl = getRequestBaseUrl(req);
+  if (requestBaseUrl) return `${requestBaseUrl}/register`;
+
   return `http://${getLocalLanIp()}:${PORT}/register`;
 }
 
-const REGISTRATION_FORM_URL = getRegistrationFormUrl();
 const sseClients = new Map();
 let nextSseClientId = 1;
 
@@ -99,7 +119,7 @@ app.get("/api/events", (req, res) => {
   res.write(
     `event: connected\ndata: ${JSON.stringify({
       ok: true,
-      registrationUrl: REGISTRATION_FORM_URL,
+      registrationUrl: getRegistrationFormUrl(req),
       timestamp: new Date().toISOString(),
     })}\n\n`,
   );
@@ -164,7 +184,7 @@ app.post("/api/qr-scan", (req, res) => {
   );
 
   broadcastSSE("unlock", {
-    url: REGISTRATION_FORM_URL,
+    url: getRegistrationFormUrl(req),
     timeout: UNLOCK_TIMEOUT,
     timestamp: new Date().toISOString(),
   });
@@ -236,6 +256,7 @@ app.use("/api/visitors", require("./src/routes/visitor"));
 app.use("/api/knowledge", require("./src/routes/knowledge.routes"));
 app.use("/api/ai", require("./src/routes/ai.routes"));
 app.use("/api/mcp", require("./src/routes/mcp.routes"));
+app.use("/api/rfid", require("./src/routes/rfid.routes"));
 
 app.get("/display", (req, res) =>
   res.sendFile(path.join(__dirname, "public", "display.html")),
@@ -252,7 +273,7 @@ app.get("/health", (req, res) =>
     status: "ok",
     db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
     uptime: process.uptime(),
-    registrationUrl: REGISTRATION_FORM_URL,
+    registrationUrl: getRegistrationFormUrl(req),
     sseClients: sseClients.size,
   }),
 );
@@ -298,7 +319,7 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`\n🚀 Server running on port ${PORT}`);
   console.log(`   Dashboard  : http://localhost:5173`);
   console.log(`   Display    : http://localhost:${PORT}/display`);
-  console.log(`   Register   : ${REGISTRATION_FORM_URL}`);
+  console.log(`   Register   : ${getRegistrationFormUrl()}`);
   console.log(`   ESP32 scan : POST http://<LAN_IP>:${PORT}/api/qr-scan`);
   console.log(`   Rooms API  : http://localhost:${PORT}/api/rooms`);
   console.log(`   Ads API    : http://localhost:${PORT}/api/advertisements`);

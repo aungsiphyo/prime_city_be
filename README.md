@@ -107,6 +107,7 @@ The backend reads configuration from `Node_Backend/.env`. Do NOT commit secrets 
 - `AI_REQUIRE_AUTH` — (optional) set `true` in production to require JWT for `/api/ai/chat`
 - `AI_RATE_LIMIT_ENABLED`, `AI_RATE_LIMIT_MAX`, `AI_RATE_LIMIT_WINDOW_MS` — (optional) AI chat rate-limit controls
 - `AI_SYSTEM_PROMPT`, `AI_RESPONSE_STYLE_PROMPT` — (optional) system prompts for AI
+- `RFID_DEVICE_SECRET` — (optional) require ESP32 RFID readers to send this value as `x-device-secret` or `deviceSecret`
 
 Create a `.env.example` (without values) and add it to the repo to document variables.
 

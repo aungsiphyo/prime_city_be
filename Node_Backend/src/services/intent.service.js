@@ -1,5 +1,8 @@
 const TOOL_INTENTS = new Set([
   "getParkingStatus",
+  "getRecentParkingEvents",
+  "getSOSAlerts",
+  "getLatestRfidScans",
   "getMyRoom",
   "getMyBills",
   "getMyVisitors",
@@ -53,12 +56,48 @@ function classifyIntent(message) {
 
   if (
     hasAny(text, ["parking", "slot", "available", "ပါကင်", "ကားရပ်"]) &&
+    hasAny(text, ["latest", "recent", "history", "event", "change", "ပြောင်း", "နောက်ဆုံး"])
+  ) {
+    return {
+      name: "getRecentParkingEvents",
+      confidence: 0.9,
+      toolName: "getRecentParkingEvents",
+      args: {
+        type: hasAny(text, ["visitor", "ဧည့်", "ဧည့်"]) ? "visitor" : hasAny(text, ["resident", "နေထိုင်"]) ? "resident" : undefined,
+      },
+    };
+  }
+
+  if (
+    hasAny(text, ["parking", "slot", "available", "ပါကင်", "ကားရပ်"]) &&
     hasAny(text, ["ကျန်", "status", "available", "ဘယ်လောက်", "ရှိ"])
   ) {
     return {
       name: "getParkingStatus",
       confidence: 0.95,
       toolName: "getParkingStatus",
+    };
+  }
+
+  if (
+    hasAny(text, ["sos", "alert", "emergency", "အရေးပေါ်"]) &&
+    hasAny(text, ["latest", "recent", "နောက်ဆုံး", "အသစ်", "စာရင်း", "ရှိ"])
+  ) {
+    return {
+      name: "getSOSAlerts",
+      confidence: 0.9,
+      toolName: "getSOSAlerts",
+    };
+  }
+
+  if (
+    hasAny(text, ["rfid", "card", "scan", "ကတ်", "စကင်"]) &&
+    hasAny(text, ["latest", "recent", "နောက်ဆုံး", "အသစ်", "စာရင်း", "ဝင်"])
+  ) {
+    return {
+      name: "getLatestRfidScans",
+      confidence: 0.9,
+      toolName: "getLatestRfidScans",
     };
   }
 

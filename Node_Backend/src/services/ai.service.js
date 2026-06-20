@@ -134,6 +134,45 @@ function buildToolAssistantContent(toolName, result) {
     );
   }
 
+  if (toolName === "getRecentParkingEvents") {
+    if (!result.events.length) {
+      return "Parking ပြောင်းလဲမှု history မတွေ့သေးပါ။";
+    }
+
+    const latest = result.events[0];
+    const action = latest.delta > 0 ? "ဝင်ထား" : "ထွက်ထား";
+    return (
+      `နောက်ဆုံး parking change က ${latest.type} parking မှာ ${action}တာပါ။ ` +
+      `လက်ရှိ used ${latest.usedSlot}, available ${latest.availableSlot} ဖြစ်ပါတယ်။`
+    );
+  }
+
+  if (toolName === "getSOSAlerts") {
+    if (!result.alerts.length) {
+      return "နောက်ဆုံး SOS alert မတွေ့သေးပါ။";
+    }
+
+    const latest = result.alerts[0];
+    return (
+      `နောက်ဆုံး SOS alert က ${latest.message || "message မရှိ"} ဖြစ်ပါတယ်။ ` +
+      `Status ${latest.status}, priority ${latest.priority}, source ${latest.source || "မသိ"} ပါ။`
+    );
+  }
+
+  if (toolName === "getLatestRfidScans") {
+    if (!result.scans.length) {
+      return "နောက်ဆုံး RFID scan မတွေ့သေးပါ။";
+    }
+
+    const latest = result.scans[0];
+    const name = latest.residentName || latest.visitorName || "မတွေ့";
+    const validText = latest.valid ? "valid" : "invalid";
+    return (
+      `နောက်ဆုံး RFID scan က ${validText} ဖြစ်ပါတယ်။ ` +
+      `UID ${latest.hardwareUid || "မရှိ"}, person ${name}, room ${latest.roomName || "-"} ပါ။`
+    );
+  }
+
   if (toolName === "getMyRoom") {
     if (!result.found) {
       return `သင့် room information မတွေ့သေးပါ။ ${result.message || "Login/room link ကိုစစ်ပါ။"}`;
@@ -141,6 +180,7 @@ function buildToolAssistantContent(toolName, result) {
 
     return (
       `သင့်အခန်းက ${result.roomNumber} ဖြစ်ပါတယ်။ ` +
+      `အခန်းပိုင်ရှင်/Resident: ${result.ownerName || "မသတ်မှတ်ထားပါ"}။ ` +
       `Floor ${result.floor}, type ${result.roomType}, status ${result.status} ဖြစ်ပါတယ်။`
     );
   }
@@ -245,9 +285,51 @@ async function manualToolContext(message, user) {
     text.includes("ပါကင်") ||
     text.includes("ကားရပ်")
   ) {
+    if (
+      text.includes("latest") ||
+      text.includes("recent") ||
+      text.includes("history") ||
+      text.includes("change") ||
+      text.includes("ပြောင်း") ||
+      text.includes("နောက်ဆုံး")
+    ) {
+      const result = await runTool("getRecentParkingEvents", {}, user);
+      return {
+        toolName: "getRecentParkingEvents",
+        result,
+      };
+    }
+
     const result = await runTool("getParkingStatus", {}, user);
     return {
       toolName: "getParkingStatus",
+      result,
+    };
+  }
+
+  if (
+    text.includes("sos") ||
+    text.includes("alert") ||
+    text.includes("emergency") ||
+    text.includes("အရေးပေါ်")
+  ) {
+    const result = await runTool("getSOSAlerts", {}, user);
+    return {
+      toolName: "getSOSAlerts",
+      result,
+    };
+  }
+
+  if (
+    text.includes("rfid") ||
+    text.includes("card") ||
+    text.includes("scan") ||
+    text.includes("ကတ်") ||
+    text.includes("စကင်")
+  ) {
+    const result = await runTool("getLatestRfidScans", {}, user);
+    return {
+      toolName: "getLatestRfidScans",
       result,
     };
   }
