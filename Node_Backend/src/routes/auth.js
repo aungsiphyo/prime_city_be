@@ -199,7 +199,10 @@ router.post("/login/step2", async (req, res) => {
         resident_uid: user.resident_uid,
         rfid_uid: user.rfid_uid || null,
         fullname: user.fullname,
+        email: user.email,
+        phone: user.phone,
         role: user.role,
+        room_id: user.room_id || null,
       },
     });
   } catch (err) {

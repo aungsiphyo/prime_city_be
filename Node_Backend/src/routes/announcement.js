@@ -1,6 +1,24 @@
 const express = require("express");
 const router = express.Router();
 const Announcement = require("../models/Announcement");
+const Notification = require("../models/Notification");
+const User = require("../models/User");
+const optionalAuth = require("../middleware/optionalAuthMiddleware");
+const { sendPushToUsers } = require("../services/push.service");
+
+function getUserId(req) {
+  return req.user?.id || req.user?._id;
+}
+
+function emitNotificationToUser(app, userId, notification) {
+  const io = app.get("io");
+  const users = app.get("onlineUsers") || {};
+  const socketId = users[String(userId)];
+
+  if (io && socketId) {
+    io.to(socketId).emit("notification", notification);
+  }
+}
 
 router.get("/", async (req, res) => {
   try {
@@ -36,12 +54,19 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", optionalAuth, async (req, res) => {
   try {
     const { user_id, title, message, type } = req.body;
 
+    if (!title || !message || !type) {
+      return res.status(400).json({
+        success: false,
+        message: "title, message and type are required",
+      });
+    }
+
     const announcement = await Announcement.create({
-      user_id,
+      user_id: user_id || getUserId(req),
       title,
       message,
       type,
@@ -49,11 +74,50 @@ router.post("/", async (req, res) => {
 
     const io = req.app.get("io");
 
-    io.emit("announcement", announcement);
+    if (io) {
+      io.emit("announcement", announcement);
+    }
 
-    res.json({ message: "Announcement created", announcement });
+    const users = await User.find().select("_id").lean();
+    const notifications = await Notification.insertMany(
+      users.map((user) => ({
+        user_id: user._id,
+        title,
+        message,
+        type: "Announcement",
+        data: {
+          announcement_id: String(announcement._id),
+          announcement_type: type,
+        },
+      })),
+    );
+
+    notifications.forEach((notification) => {
+      emitNotificationToUser(req.app, notification.user_id, notification);
+    });
+
+    await sendPushToUsers(
+      users.map((user) => user._id),
+      {
+        title,
+        message,
+        type: "Announcement",
+        data: {
+          announcement_id: String(announcement._id),
+          announcement_type: type,
+        },
+      },
+      { channelId: "community_updates" },
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Announcement created",
+      data: announcement,
+      announcement,
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

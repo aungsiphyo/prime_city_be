@@ -1,26 +1,75 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import ScreenContainer from '../../components/ScreenContainer';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
+import { fetchProfile } from '../../api/profile';
+import { sendSosAlert } from '../../api/sos';
 
 const EMERGENCY_TYPES = [
-  { id: 'security', label: 'Security', icon: 'shield-outline' },
-  { id: 'medical', label: 'Medical', icon: 'medkit-outline' },
-  { id: 'fire', label: 'Fire', icon: 'flame-outline' },
+  { id: 'Security', label: 'Security', icon: 'shield-outline' },
+  { id: 'Medical', label: 'Medical', icon: 'medkit-outline' },
+  { id: 'Fire', label: 'Fire', icon: 'flame-outline' },
 ];
 
 export default function SosScreen({ navigation }) {
   const { theme } = useTheme();
-  const [selected, setSelected] = useState('security');
+  const { user } = useAuth();
+  const [selected, setSelected] = useState('Security');
+  const [submitting, setSubmitting] = useState(false);
+
+  const selectedType = EMERGENCY_TYPES.find((type) => type.id === selected);
+
+  const submitSOS = async () => {
+    setSubmitting(true);
+    try {
+      const profile = user?.room_id ? user : await fetchProfile();
+      const residentId = profile?.id || user?.id;
+      const roomId = profile?.room_id || user?.room_id;
+
+      if (!residentId || !roomId) {
+        Alert.alert(
+          'Room not linked',
+          'Your resident account needs a linked unit before sending SOS.',
+        );
+        return;
+      }
+
+      await sendSosAlert({
+        resident_id: residentId,
+        room_id: roomId,
+        alert_type: selectedType?.label || 'General',
+        priority: selected === 'Fire' ? 'Critical' : 'High',
+        message: `${selectedType?.label || 'Emergency'} SOS from ${profile?.fullname || 'resident'}.`,
+      });
+
+      Alert.alert('SOS Sent', 'Security has been notified. Help is on the way.');
+    } catch (err) {
+      if (!err.sessionExpired) {
+        Alert.alert('SOS failed', err.message || 'Unable to send SOS alert.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const triggerSOS = () => {
+    if (submitting) return;
+
     Alert.alert(
       'Send SOS Alert?',
       'Security will be notified immediately with your location.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Send SOS', style: 'destructive', onPress: () => Alert.alert('SOS Sent', 'Help is on the way.') },
+        { text: 'Send SOS', style: 'destructive', onPress: submitSOS },
       ],
     );
   };
@@ -48,7 +97,8 @@ export default function SosScreen({ navigation }) {
                     borderColor: active ? theme.danger : theme.border,
                   },
                 ]}
-                onPress={() => setSelected(type.id)}>
+                onPress={() => setSelected(type.id)}
+                disabled={submitting}>
                 <Ionicons
                   name={type.icon}
                   size={22}
@@ -68,17 +118,24 @@ export default function SosScreen({ navigation }) {
 
         <View style={styles.sosArea}>
           <TouchableOpacity
-            style={styles.sosOuter}
+            style={[styles.sosOuter, submitting && styles.disabled]}
             onPress={triggerSOS}
+            disabled={submitting}
             activeOpacity={0.9}>
             <View style={styles.sosRing}>
               <View style={styles.sosButton}>
-                <Ionicons name="alert" size={40} color="#FFFFFF" />
+                {submitting ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Ionicons name="alert" size={40} color="#FFFFFF" />
+                )}
                 <Text style={styles.sosText}>SOS</Text>
               </View>
             </View>
           </TouchableOpacity>
-          <Text style={[styles.hint, { color: theme.subtext }]}>Tap to send alert</Text>
+          <Text style={[styles.hint, { color: theme.subtext }]}>
+            {submitting ? 'Sending alert...' : 'Tap to send alert'}
+          </Text>
         </View>
 
         <View style={[styles.infoCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -132,6 +189,7 @@ const styles = StyleSheet.create({
   },
   sosText: { color: '#FFFFFF', fontWeight: '800', fontSize: 16, marginTop: 2 },
   hint: { fontSize: 13 },
+  disabled: { opacity: 0.7 },
   infoCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',

@@ -1,37 +1,24 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  Platform,
+  ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import ScreenContainer from '../../components/ScreenContainer';
 import Card from '../../components/Card';
 // local chat components removed: using global FloatingChat instead
 import { useTheme } from '../../context/ThemeContext';
-
-const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 88 : 68;
-
-const fakeAnnouncements = [
-  {
-    id: 'a1',
-    title: 'Water Shutoff',
-    message: 'Maintenance on 12 June',
-    type: 'Maintenance',
-  },
-  {
-    id: 'a2',
-    title: 'Community BBQ',
-    message: 'Join us this Saturday',
-    type: 'Event',
-  },
-];
+import { useAuth } from '../../context/AuthContext';
+import { fetchAnnouncements } from '../../api/announcements';
 
 const QUICK_ACTIONS = [
   { id: 'bills', label: 'Bills', icon: 'receipt-outline', screen: 'Bills' },
+  { id: 'helpers', label: 'Helpers', icon: 'people-outline', screen: 'Helpers' },
   {
     id: 'visitor',
     label: 'Visitor',
@@ -59,14 +46,54 @@ const TYPE_COLORS = {
 
 export default function HomeScreen({ navigation }) {
   const { theme } = useTheme();
+  const { user } = useAuth();
   // chat is managed globally by ChatProvider / FloatingChat
+  const [announcements, setAnnouncements] = useState([]);
+  const [loadingAnnouncements, setLoadingAnnouncements] = useState(true);
+  const quickActions =
+    user?.role === 'Admin'
+      ? [
+          {
+            id: 'admin-notifications',
+            label: 'Send Noti',
+            icon: 'send-outline',
+            screen: 'AdminNotifications',
+          },
+          ...QUICK_ACTIONS,
+        ]
+      : QUICK_ACTIONS;
 
   const navigateTo = screen => navigation.navigate(screen);
+
+  const loadAnnouncements = useCallback(async () => {
+    setLoadingAnnouncements(true);
+    try {
+      const data = await fetchAnnouncements({ limit: 5 });
+      setAnnouncements(
+        data.map((item) => ({
+          id: item._id,
+          title: item.title,
+          message: item.message,
+          type: item.type || 'General',
+        })),
+      );
+    } catch (err) {
+      if (!err.sessionExpired) setAnnouncements([]);
+    } finally {
+      setLoadingAnnouncements(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadAnnouncements();
+    }, [loadAnnouncements]),
+  );
 
   return (
     <ScreenContainer navigation={navigation}>
       <FlatList
-        data={fakeAnnouncements}
+        data={announcements}
         keyExtractor={i => i.id}
         contentContainerStyle={styles.list}
         ListHeaderComponent={
@@ -87,7 +114,7 @@ export default function HomeScreen({ navigation }) {
               Quick actions
             </Text>
             <View style={styles.actionsRow}>
-              {QUICK_ACTIONS.map(action => (
+              {quickActions.map(action => (
                 <TouchableOpacity
                   key={action.id}
                   style={[
@@ -115,10 +142,47 @@ export default function HomeScreen({ navigation }) {
               ))}
             </View>
 
+            <Card style={styles.reportCard}>
+              <View style={styles.reportRow}>
+                <View style={[styles.reportIcon, { backgroundColor: theme.warningBg }]}>
+                  <Ionicons name="document-text-outline" size={22} color={theme.warning} />
+                </View>
+                <View style={styles.reportCopy}>
+                  <Text style={[styles.reportTitle, { color: theme.text }]}>Submit a report</Text>
+                  <Text style={[styles.reportSub, { color: theme.subtext }]}>
+                    Maintenance, security, or community issues
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={[styles.reportBtn, { backgroundColor: theme.primary }]}
+                onPress={() => navigateTo('ReportIssue')}
+                activeOpacity={0.85}>
+                <Ionicons name="send-outline" size={17} color={theme.primaryText} />
+                <Text style={[styles.reportBtnText, { color: theme.primaryText }]}>Report now</Text>
+              </TouchableOpacity>
+            </Card>
+
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
               Latest announcements
             </Text>
           </>
+        }
+        ListEmptyComponent={
+          loadingAnnouncements ? (
+            <View style={styles.emptyAnnouncements}>
+              <ActivityIndicator color={theme.primary} />
+            </View>
+          ) : (
+            <Card>
+              <View style={styles.emptyRow}>
+                <Ionicons name="megaphone-outline" size={20} color={theme.inactive} />
+                <Text style={[styles.emptyText, { color: theme.subtext }]}>
+                  No announcements yet
+                </Text>
+              </View>
+            </Card>
+          )
         }
         renderItem={({ item }) => {
           const accent = TYPE_COLORS[item.type] || 'primary';
@@ -153,7 +217,6 @@ export default function HomeScreen({ navigation }) {
         }}
       />
 
-      {/* global FloatingChat mounted in App root */}
     </ScreenContainer>
   );
 }
@@ -192,6 +255,28 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   actionLabel: { fontSize: 13, fontWeight: '600' },
+  reportCard: { marginBottom: 28 },
+  reportRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  reportIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  reportCopy: { flex: 1 },
+  reportTitle: { fontSize: 16, fontWeight: '700', marginBottom: 3 },
+  reportSub: { fontSize: 13, lineHeight: 18 },
+  reportBtn: {
+    minHeight: 42,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  reportBtnText: { fontSize: 14, fontWeight: '700' },
   aiCard: { marginBottom: 28 },
   aiRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
   aiIconWrap: {
@@ -227,4 +312,7 @@ const styles = StyleSheet.create({
   typeText: { fontSize: 12, fontWeight: '600' },
   cardTitle: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
   cardText: { fontSize: 14, lineHeight: 20 },
+  emptyAnnouncements: { paddingVertical: 20 },
+  emptyRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  emptyText: { fontSize: 14 },
 });
