@@ -14,6 +14,7 @@ const Tab = createBottomTabNavigator();
 const TAB_ICONS = {
   Home: { active: 'home', inactive: 'home-outline' },
   Bills: { active: 'receipt', inactive: 'receipt-outline' },
+  // Helpers tab removed from bottom navigation; kept on Home card
   Announcements: { active: 'megaphone', inactive: 'megaphone-outline' },
   Profile: { active: 'person', inactive: 'person-outline' },
 };
@@ -24,7 +25,8 @@ function SosTabButton({ onPress, accessibilityState }) {
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
-      style={styles.sosWrapper}>
+      style={styles.sosWrapper}
+    >
       <View style={[styles.sosFab, focused && styles.sosFabFocused]}>
         <Ionicons name="alert" size={28} color="#FFFFFF" />
       </View>
@@ -61,15 +63,17 @@ export default function BottomTabNavigator() {
           const name = focused ? icons.active : icons.inactive;
           return <Ionicons name={name} size={22} color={color} />;
         },
-      })}>
+      })}
+    >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Bills" component={BillsScreen} />
+      {/* Helpers tab removed - access via Home screen card */}
       <Tab.Screen
         name="SOS"
         component={SosScreen}
         options={{
           tabBarLabel: () => null,
-          tabBarButton: (props) => <SosTabButton {...props} />,
+          tabBarButton: props => <SosTabButton {...props} />,
         }}
       />
       <Tab.Screen name="Announcements" component={AnnouncementsScreen} />

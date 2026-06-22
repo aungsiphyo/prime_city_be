@@ -58,8 +58,10 @@ export default function LoginScreen() {
       signIn({
         id: res.user.id,
         fullname: res.user.fullname,
-        email: email.trim(),
+        email: res.user.email || email.trim(),
+        phone: res.user.phone,
         role: res.user.role,
+        room_id: res.user.room_id,
       });
     } catch (err) {
       Alert.alert('Verification failed', err.message || 'Invalid or expired OTP.');

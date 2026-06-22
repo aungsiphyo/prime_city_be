@@ -10,10 +10,26 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import TopBar from '../../components/TopBar';
+import ScreenContainer from '../../components/ScreenContainer';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { registerVisitor, splitFullName, VISITOR_PURPOSES } from '../../api/visitors';
+
+function InputField({ label, icon, theme, ...props }) {
+  return (
+    <View style={styles.field}>
+      <Text style={[styles.label, { color: theme.subtext }]}>{label}</Text>
+      <View style={[styles.inputWrap, { backgroundColor: theme.input, borderColor: theme.border }]}>
+        <Ionicons name={icon} size={18} color={theme.inactive} style={styles.inputIcon} />
+        <TextInput
+          style={[styles.input, { color: theme.text }]}
+          placeholderTextColor={theme.inactive}
+          {...props}
+        />
+      </View>
+    </View>
+  );
+}
 
 export default function PreRegisterVisitorScreen({ navigation }) {
   const { theme } = useTheme();
@@ -27,20 +43,6 @@ export default function PreRegisterVisitorScreen({ navigation }) {
   const [purposeDetail, setPurposeDetail] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
-  const InputField = ({ label, icon, ...props }) => (
-    <View style={styles.field}>
-      <Text style={[styles.label, { color: theme.subtext }]}>{label}</Text>
-      <View style={[styles.inputWrap, { backgroundColor: theme.input, borderColor: theme.border }]}>
-        <Ionicons name={icon} size={18} color={theme.inactive} style={styles.inputIcon} />
-        <TextInput
-          style={[styles.input, { color: theme.text }]}
-          placeholderTextColor={theme.inactive}
-          {...props}
-        />
-      </View>
-    </View>
-  );
 
   const onSubmit = async () => {
     const { firstName, lastName } = splitFullName(name);
@@ -86,8 +88,11 @@ export default function PreRegisterVisitorScreen({ navigation }) {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.background }]}>
-      <TopBar navigation={navigation} variant="stack" title="Pre-register Visitor" />
+    <ScreenContainer
+      navigation={navigation}
+      topBarVariant="stack"
+      title="Pre-register Visitor"
+      showBottomNav>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={[styles.infoBanner, { backgroundColor: theme.primary + '15', borderColor: theme.primary + '33' }]}>
           <Ionicons name="information-circle-outline" size={20} color={theme.primary} />
@@ -97,6 +102,7 @@ export default function PreRegisterVisitorScreen({ navigation }) {
         </View>
 
         <InputField
+          theme={theme}
           label="Visitor name"
           icon="person-outline"
           placeholder="Full name"
@@ -104,6 +110,7 @@ export default function PreRegisterVisitorScreen({ navigation }) {
           onChangeText={setName}
         />
         <InputField
+          theme={theme}
           label="Email"
           icon="mail-outline"
           placeholder="visitor@email.com"
@@ -113,6 +120,7 @@ export default function PreRegisterVisitorScreen({ navigation }) {
           keyboardType="email-address"
         />
         <InputField
+          theme={theme}
           label="Phone number"
           icon="call-outline"
           placeholder="+1 234 567 890"
@@ -121,6 +129,7 @@ export default function PreRegisterVisitorScreen({ navigation }) {
           keyboardType="phone-pad"
         />
         <InputField
+          theme={theme}
           label="Host name"
           icon="home-outline"
           placeholder="Resident or host name"
@@ -158,6 +167,7 @@ export default function PreRegisterVisitorScreen({ navigation }) {
         </View>
 
         <InputField
+          theme={theme}
           label="Additional details (optional)"
           icon="document-text-outline"
           placeholder="Meeting room, delivery notes, etc."
@@ -180,7 +190,11 @@ export default function PreRegisterVisitorScreen({ navigation }) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.button, { backgroundColor: theme.primary, opacity: submitting ? 0.7 : 1 }]}
+          style={[
+            styles.button,
+            { backgroundColor: theme.primary },
+            submitting && styles.disabled,
+          ]}
           onPress={onSubmit}
           disabled={submitting}
           activeOpacity={0.85}>
@@ -194,12 +208,11 @@ export default function PreRegisterVisitorScreen({ navigation }) {
           )}
         </TouchableOpacity>
       </ScrollView>
-    </View>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
   container: { padding: 16, paddingBottom: 40 },
   infoBanner: {
     flexDirection: 'row',
@@ -243,4 +256,5 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   buttonText: { fontSize: 16, fontWeight: '700' },
+  disabled: { opacity: 0.7 },
 });

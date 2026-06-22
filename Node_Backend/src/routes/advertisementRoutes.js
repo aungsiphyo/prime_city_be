@@ -14,10 +14,14 @@ router.post("/", async (req, res) => {
 
 router.get("/", async (req, res) => {
   try {
+    const { limit } = req.query;
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
 
-    const ads = await Advertisement.find(filter);
+    const query = Advertisement.find(filter).sort({ created_at: -1 });
+    if (limit) query.limit(Math.max(1, Number(limit)));
+
+    const ads = await query.lean();
     res.status(200).json(ads);
   } catch (error) {
     res.status(500).json({ error: error.message });

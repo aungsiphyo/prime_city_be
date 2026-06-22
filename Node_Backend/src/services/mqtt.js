@@ -1,7 +1,9 @@
 const mqtt = require("mqtt");
 const Parking = require("../models/Parking");
 const ParkingEvent = require("../models/ParkingEvent");
+const mongoose = require("mongoose");
 const SosAlert = require("../models/SosAlert");
+const Room = require("../models/Room");
 const {
   emitRfidScan,
   saveRfidScanLog,
@@ -115,7 +117,8 @@ function setupMQTT(io) {
         const sosData = {
           message: data.message || "SOS alert received",
           source: data.source || "ESP32",
-          status: data.status === "SOS_ACTIVE" ? "Pending" : data.status || "Pending",
+          status:
+            data.status === "SOS_ACTIVE" ? "Pending" : data.status || "Pending",
           alert_type: data.alert_type || "General",
           priority: data.priority || "High",
           device_id: data.device_id,
@@ -123,6 +126,19 @@ function setupMQTT(io) {
         };
 
         if (data.room_id) sosData.room_id = data.room_id;
+        // If MQTT provided a room identifier that's not an ObjectId (like room name), resolve it to _id
+        if (
+          sosData.room_id &&
+          !mongoose.Types.ObjectId.isValid(String(sosData.room_id))
+        ) {
+          const lookup = String(sosData.room_id || "").trim();
+          const linkedRoom = await Room.findOne({
+            $or: [{ room_name: lookup }, { room_id: lookup }],
+          });
+          if (linkedRoom) {
+            sosData.room_id = String(linkedRoom._id);
+          }
+        }
         if (data.resident_id) sosData.resident_id = data.resident_id;
 
         const createdAlert = await SosAlert.create(sosData);
