@@ -1,11 +1,15 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   View,
   Text,
   FlatList,
+  ImageBackground,
+  Linking,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -15,6 +19,7 @@ import Card from '../../components/Card';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { fetchAnnouncements } from '../../api/announcements';
+import { fetchAdvertisements } from '../../api/advertisements';
 
 const QUICK_ACTIONS = [
   { id: 'bills', label: 'Bills', icon: 'receipt-outline', screen: 'Bills' },
@@ -44,12 +49,226 @@ const TYPE_COLORS = {
   Event: 'primary',
 };
 
+const AD_WINDOW_SIZE = 7;
+
+function getAdvertisementWindow(items, startIndex) {
+  if (items.length <= AD_WINDOW_SIZE) return items;
+
+  return Array.from(
+    { length: AD_WINDOW_SIZE },
+    (_, index) => items[(startIndex + index) % items.length],
+  );
+}
+
+function AdvertisementCarousel({ advertisements, loading }) {
+  const { theme } = useTheme();
+  const { width } = useWindowDimensions();
+  const listRef = useRef(null);
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [windowStart, setWindowStart] = useState(0);
+  const [failedImages, setFailedImages] = useState({});
+  const cardWidth = Math.max(280, width - 32);
+  const snapWidth = cardWidth + 12;
+  const visibleAdvertisements = useMemo(
+    () => getAdvertisementWindow(advertisements, windowStart),
+    [advertisements, windowStart],
+  );
+
+  useEffect(() => {
+    setWindowStart(0);
+    setFailedImages({});
+  }, [advertisements]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+    scrollX.setValue(0);
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [advertisements, scrollX, snapWidth, windowStart]);
+
+  useEffect(() => {
+    if (visibleAdvertisements.length < 2) return undefined;
+
+    const timer = setInterval(() => {
+      setActiveIndex((currentIndex) => {
+        const nextIndex = currentIndex + 1;
+
+        if (nextIndex < visibleAdvertisements.length) {
+          listRef.current?.scrollToOffset({
+            offset: nextIndex * snapWidth,
+            animated: true,
+          });
+          return nextIndex;
+        }
+
+        if (advertisements.length > AD_WINDOW_SIZE) {
+          setWindowStart((currentStart) =>
+            (currentStart + AD_WINDOW_SIZE) % advertisements.length,
+          );
+        } else {
+          listRef.current?.scrollToOffset({ offset: 0, animated: true });
+        }
+
+        return 0;
+      });
+    }, 4500);
+
+    return () => clearInterval(timer);
+  }, [advertisements.length, snapWidth, visibleAdvertisements.length]);
+
+  const onMomentumEnd = (event) => {
+    const offset = event.nativeEvent.contentOffset.x;
+    const nextIndex = Math.round(offset / snapWidth);
+    setActiveIndex(Math.max(0, Math.min(nextIndex, visibleAdvertisements.length - 1)));
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.adsSection}>
+        <View style={[styles.adSkeleton, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <ActivityIndicator color={theme.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  if (!advertisements.length) return null;
+
+  return (
+    <View style={styles.adsSection}>
+      <View style={styles.adsHeader}>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Advertisements</Text>
+        <Text style={[styles.adsCount, { color: theme.subtext }]}>
+          {activeIndex + 1}/{visibleAdvertisements.length}
+          {advertisements.length > AD_WINDOW_SIZE ? ` · ${advertisements.length} total` : ''}
+        </Text>
+      </View>
+      <Animated.FlatList
+        ref={listRef}
+        data={visibleAdvertisements}
+        extraData={windowStart}
+        keyExtractor={(item) => item.id}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={snapWidth}
+        decelerationRate="fast"
+        onMomentumScrollEnd={onMomentumEnd}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+          { useNativeDriver: true },
+        )}
+        scrollEventThrottle={16}
+        renderItem={({ item, index }) => {
+          const showImage = item.imageUrl && !failedImages[item.id];
+          const inputRange = [
+            (index - 1) * snapWidth,
+            index * snapWidth,
+            (index + 1) * snapWidth,
+          ];
+          const scale = scrollX.interpolate({
+            inputRange,
+            outputRange: [0.94, 1, 0.94],
+            extrapolate: 'clamp',
+          });
+          const opacity = scrollX.interpolate({
+            inputRange,
+            outputRange: [0.72, 1, 0.72],
+            extrapolate: 'clamp',
+          });
+
+          const card = (
+            <Animated.View
+              style={[
+                styles.adCard,
+                {
+                  width: cardWidth,
+                  opacity,
+                  transform: [{ scale }],
+                  backgroundColor: theme.card,
+                  borderColor: theme.border,
+                },
+              ]}>
+              {showImage ? (
+                <ImageBackground
+                  source={{ uri: item.imageUrl }}
+                  style={styles.adImage}
+                  resizeMode="cover"
+                  onError={() =>
+                    setFailedImages((current) => ({ ...current, [item.id]: true }))
+                  }
+                  imageStyle={styles.adImageStyle}>
+                  <View style={styles.adImageOverlay}>
+                    <View style={styles.adContent}>
+                      <Text style={styles.adCompany} numberOfLines={1}>
+                        {item.companyName || 'Sponsored'}
+                      </Text>
+                      <Text style={styles.adTitle} numberOfLines={2}>
+                        {item.title}
+                      </Text>
+                      <Text style={styles.adText} numberOfLines={2}>
+                        {item.content}
+                      </Text>
+                    </View>
+                  </View>
+                </ImageBackground>
+              ) : (
+                <View style={styles.adFallback}>
+                  <View style={[styles.adFallbackIcon, { backgroundColor: theme.primary + '18' }]}>
+                    <Ionicons name="image-outline" size={26} color={theme.primary} />
+                  </View>
+                  <View style={styles.adFallbackCopy}>
+                    <Text style={[styles.adFallbackCompany, { color: theme.subtext }]} numberOfLines={1}>
+                      {item.companyName || 'Sponsored'}
+                    </Text>
+                    <Text style={[styles.adFallbackTitle, { color: theme.text }]} numberOfLines={2}>
+                      {item.title}
+                    </Text>
+                    <Text style={[styles.adFallbackText, { color: theme.subtext }]} numberOfLines={2}>
+                      {item.content}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </Animated.View>
+          );
+
+          return (
+            <TouchableOpacity
+              activeOpacity={item.linkUrl ? 0.9 : 1}
+              disabled={!item.linkUrl}
+              onPress={() => Linking.openURL(item.linkUrl).catch(() => null)}
+              style={styles.adTouchable}>
+              {card}
+            </TouchableOpacity>
+          );
+        }}
+      />
+      <View style={styles.adDots}>
+        {visibleAdvertisements.map((item, index) => (
+          <View
+            key={item.id}
+            style={[
+              styles.adDot,
+              activeIndex === index ? styles.adDotActive : styles.adDotInactive,
+              {
+                backgroundColor: activeIndex === index ? theme.primary : theme.border,
+              },
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export default function HomeScreen({ navigation }) {
   const { theme } = useTheme();
   const { user } = useAuth();
   // chat is managed globally by ChatProvider / FloatingChat
   const [announcements, setAnnouncements] = useState([]);
+  const [advertisements, setAdvertisements] = useState([]);
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(true);
+  const [loadingAdvertisements, setLoadingAdvertisements] = useState(true);
   const quickActions =
     user?.role === 'Admin'
       ? [
@@ -84,10 +303,23 @@ export default function HomeScreen({ navigation }) {
     }
   }, []);
 
+  const loadAdvertisements = useCallback(async () => {
+    setLoadingAdvertisements(true);
+    try {
+      const data = await fetchAdvertisements({ status: 'all' });
+      setAdvertisements(data);
+    } catch (err) {
+      setAdvertisements([]);
+    } finally {
+      setLoadingAdvertisements(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadAnnouncements();
-    }, [loadAnnouncements]),
+      loadAdvertisements();
+    }, [loadAdvertisements, loadAnnouncements]),
   );
 
   return (
@@ -109,6 +341,11 @@ export default function HomeScreen({ navigation }) {
                 Unit A-101 · Smart Residential
               </Text>
             </View>
+
+            <AdvertisementCarousel
+              advertisements={advertisements}
+              loading={loadingAdvertisements}
+            />
 
             <Text style={[styles.sectionTitle, { color: theme.text }]}>
               Quick actions
@@ -232,6 +469,93 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sub: { fontSize: 14 },
+  adsSection: {
+    marginBottom: 28,
+  },
+  adsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  adsCount: { fontSize: 12, fontWeight: '700', marginBottom: 12 },
+  adTouchable: { marginRight: 12 },
+  adCard: {
+    height: 178,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  adImage: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  adImageStyle: {
+    borderRadius: 14,
+  },
+  adImageOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.24)',
+  },
+  adContent: {
+    padding: 14,
+    backgroundColor: 'rgba(0,0,0,0.38)',
+  },
+  adCompany: {
+    color: '#E0F7FA',
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  adTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  adText: {
+    color: '#E2E8F0',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  adFallback: {
+    flex: 1,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  adFallbackIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  adFallbackCopy: { flex: 1 },
+  adFallbackCompany: { fontSize: 12, fontWeight: '700', marginBottom: 4 },
+  adFallbackTitle: { fontSize: 18, fontWeight: '800', marginBottom: 5 },
+  adFallbackText: { fontSize: 13, lineHeight: 18 },
+  adSkeleton: {
+    height: 178,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adDots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 10,
+  },
+  adDot: {
+    height: 7,
+    borderRadius: 4,
+  },
+  adDotActive: { width: 18 },
+  adDotInactive: { width: 7 },
   sectionTitle: { fontSize: 17, fontWeight: '700', marginBottom: 12 },
   actionsRow: {
     flexDirection: 'row',
