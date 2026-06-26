@@ -14,10 +14,14 @@ import {
   Easing,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { useTheme } from '../context/ThemeContext';
 import useVoiceAssistant from '../hooks/useVoiceAssistant';
-import { sendMessage as sendAIMessage } from '../services/chatService';
+import {
+  sendFeedback as sendChatFeedback,
+  sendMessage as sendAIMessage,
+} from '../services/chatService';
 
 const CHAT_BOB_DISTANCE = 8;
 const CHAT_BOB_DURATION = 1800;
@@ -207,15 +211,20 @@ export default function FloatingChat() {
     activeSessionId,
     messages,
     sendMessage,
+    updateMessage,
     setActiveConversationId,
     newChat,
     selectSession,
     deleteSession,
   } = useChat();
   const { theme } = useTheme();
+  const { user } = useAuth();
+  const userName = (user?.fullname || user?.name || '').trim();
+  const greetingName = userName ? ` ${userName.split(' ')[0]}` : '';
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [feedbackSendingById, setFeedbackSendingById] = useState({});
   const inputRef = useRef(null);
   const listRef = useRef(null);
   const bobAnim = useRef(new Animated.Value(0)).current;
@@ -368,10 +377,15 @@ export default function FloatingChat() {
         result?.assistantMessage?.content ||
         result?.assistantMessage?.text ||
         'AI response မရပါ။';
+      const nextConversationId =
+        result?.conversationId || activeSession?.conversationId || null;
 
       sendMessage(assistantText, 'bot', {
         sessionId: targetSessionId,
         metadata: {
+          assistantMessageId: result?.assistantMessage?.id ?? null,
+          conversationId: nextConversationId,
+          feedbackRating: null,
           knowledgeSources:
             result?.knowledgeSources ||
             result?.assistantMessage?.knowledgeSources ||
@@ -392,6 +406,56 @@ export default function FloatingChat() {
       );
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleFeedback(item, rating) {
+    const messageId = item.assistantMessageId;
+    const conversationId = item.conversationId || activeSession?.conversationId;
+
+    if (
+      !messageId ||
+      !conversationId ||
+      feedbackSendingById[item.id] ||
+      item.feedbackRating === rating
+    ) {
+      return;
+    }
+
+    const previousRating = item.feedbackRating ?? null;
+
+    setFeedbackSendingById(previous => ({ ...previous, [item.id]: true }));
+    updateMessage(
+      item.id,
+      {
+        feedbackRating: rating,
+        feedbackError: null,
+      },
+      { sessionId: activeSessionId },
+    );
+
+    try {
+      await sendChatFeedback({
+        conversationId,
+        messageId,
+        rating,
+        helpful: rating > 0,
+      });
+    } catch (err) {
+      updateMessage(
+        item.id,
+        {
+          feedbackRating: previousRating,
+          feedbackError: err.message || 'Feedback မသိမ်းနိုင်သေးပါ။',
+        },
+        { sessionId: activeSessionId },
+      );
+    } finally {
+      setFeedbackSendingById(previous => {
+        const next = { ...previous };
+        delete next[item.id];
+        return next;
+      });
     }
   }
 
@@ -450,9 +514,16 @@ export default function FloatingChat() {
                 <Ionicons name="menu" size={24} color={theme.subtext} />
               </TouchableOpacity>
 
-              <Text style={[styles.headerText, { color: theme.text }]}>
-                Assistant
-              </Text>
+              <View style={styles.headerTitleWrap}>
+                <Text style={[styles.headerText, { color: theme.text }]}>
+                  SmartRes AI
+                </Text>
+                {userName ? (
+                  <Text style={[styles.headerSubText, { color: theme.subtext }]}>
+                    မင်္ဂလာပါ, {userName.split(' ')[0]} 👋
+                  </Text>
+                ) : null}
+              </View>
 
               <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                 <Text style={{ color: theme.subtext }}>✕</Text>
@@ -480,11 +551,47 @@ export default function FloatingChat() {
               ListFooterComponent={
                 sending ? <ThinkingIndicator theme={theme} /> : null
               }
+              ListEmptyComponent={
+                !sending ? (
+                  <View style={styles.emptyState}>
+                    <View style={[styles.emptyIconWrap, { backgroundColor: theme.primaryBg }]}>
+                      <Ionicons name="sparkles" size={28} color={theme.primary} />
+                    </View>
+                    <Text style={[styles.emptyGreeting, { color: theme.text }]}>
+                      {userName
+                        ? `မင်္ဂလာပါ ${userName.split(' ')[0]} 👋\nဘာကူညီပေးရမလဲ?`
+                        : 'မင်္ဂလာပါ 👋\nဘာကူညီပေးရမလဲ?'}
+                    </Text>
+                    <Text style={[styles.emptyHint, { color: theme.subtext }]}>
+                      Bills, helpers, visitors, parking, announcements — I've got you.
+                    </Text>
+                    <View style={styles.quickChips}>
+                      {[
+                        'ပါကင် status ဘယ်လောက်ကျန်လဲ?',
+                        'ကျွန်တော့် bill ဘယ်လောက်ကျန်လဲ?',
+                        'ကျွန်တော့် အခန်း ဘာသတင်းရှိလဲ?',
+                      ].map(chip => (
+                        <TouchableOpacity
+                          key={chip}
+                          onPress={() => setText(chip)}
+                          style={[styles.quickChip, { backgroundColor: theme.primaryBg, borderColor: theme.primary }]}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.quickChipText, { color: theme.primary }]}>{chip}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                ) : null
+              }
               onContentSizeChange={() => {
                 listRef.current?.scrollToEnd({ animated: true });
               }}
               renderItem={({ item }) => {
                 const isUser = item.from === 'user';
+                const canSendFeedback =
+                  !isUser && item.assistantMessageId && item.conversationId;
+                const feedbackBusy = Boolean(feedbackSendingById[item.id]);
                 const sourceTitles = Array.isArray(item.knowledgeSources)
                   ? item.knowledgeSources
                       .map(source => source?.title)
@@ -516,6 +623,88 @@ export default function FloatingChat() {
                     {!isUser && item.toolCalls?.length > 0 && (
                       <Text style={[styles.messageMeta, { color: theme.subtext }]}>
                         Tools: {item.toolCalls.length}
+                      </Text>
+                    )}
+
+                    {canSendFeedback && (
+                      <View style={styles.feedbackRow}>
+                        <TouchableOpacity
+                          onPress={() => handleFeedback(item, 1)}
+                          disabled={feedbackBusy}
+                          accessibilityLabel="Mark answer helpful"
+                          style={[
+                            styles.feedbackButton,
+                            {
+                              backgroundColor:
+                                item.feedbackRating === 1
+                                  ? theme.primaryBg
+                                  : theme.input,
+                              borderColor:
+                                item.feedbackRating === 1
+                                  ? theme.primary
+                                  : theme.border,
+                            },
+                            feedbackBusy && styles.feedbackButtonDisabled,
+                          ]}
+                        >
+                          <Ionicons
+                            name={
+                              item.feedbackRating === 1
+                                ? 'thumbs-up'
+                                : 'thumbs-up-outline'
+                            }
+                            size={15}
+                            color={
+                              item.feedbackRating === 1
+                                ? theme.primary
+                                : theme.subtext
+                            }
+                          />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          onPress={() => handleFeedback(item, -1)}
+                          disabled={feedbackBusy}
+                          accessibilityLabel="Mark answer not helpful"
+                          style={[
+                            styles.feedbackButton,
+                            {
+                              backgroundColor:
+                                item.feedbackRating === -1
+                                  ? theme.dangerBg
+                                  : theme.input,
+                              borderColor:
+                                item.feedbackRating === -1
+                                  ? theme.danger
+                                  : theme.border,
+                            },
+                            feedbackBusy && styles.feedbackButtonDisabled,
+                          ]}
+                        >
+                          <Ionicons
+                            name={
+                              item.feedbackRating === -1
+                                ? 'thumbs-down'
+                                : 'thumbs-down-outline'
+                            }
+                            size={15}
+                            color={
+                              item.feedbackRating === -1
+                                ? theme.danger
+                                : theme.subtext
+                            }
+                          />
+                        </TouchableOpacity>
+
+                        {feedbackBusy && (
+                          <ActivityIndicator size="small" color={theme.primary} />
+                        )}
+                      </View>
+                    )}
+
+                    {!isUser && item.feedbackError && (
+                      <Text style={[styles.messageMeta, { color: theme.danger }]}>
+                        {item.feedbackError}
                       </Text>
                     )}
                   </View>
@@ -825,6 +1014,23 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
   },
+  feedbackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  feedbackButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feedbackButtonDisabled: {
+    opacity: 0.65,
+  },
   inputRow: {
     flexDirection: 'row',
     padding: 12,
@@ -856,5 +1062,59 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerTitleWrap: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  headerSubText: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 1,
+    opacity: 0.85,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 16,
+  },
+  emptyIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyGreeting: {
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 28,
+    marginBottom: 8,
+  },
+  emptyHint: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  quickChips: {
+    width: '100%',
+    gap: 8,
+  },
+  quickChip: {
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  quickChipText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

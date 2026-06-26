@@ -97,6 +97,36 @@ export async function loadChatHistory() {
   }
 }
 
+export async function sendFeedback({
+  conversationId: feedbackConversationId,
+  messageId,
+  rating,
+  helpful,
+  resolved,
+  comment,
+  appVersion,
+}) {
+  if (!feedbackConversationId || !messageId) {
+    throw new Error('Feedback target is missing');
+  }
+
+  const data = await apiRequest('/ai/feedback', {
+    method: 'POST',
+    auth: true,
+    body: {
+      conversationId: feedbackConversationId,
+      messageId,
+      rating,
+      helpful: helpful ?? rating > 0,
+      resolved,
+      comment,
+      appVersion,
+    },
+  });
+
+  return data.feedback;
+}
+
 export async function invokeMcpTool(toolName, args = {}) {
   const res = await fetch(`${API_BASE_URL}/mcp/tools`, {
     method: 'GET',

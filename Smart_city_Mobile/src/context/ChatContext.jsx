@@ -11,7 +11,15 @@ import React, {
 import { resetConversation, setConversationId } from '../services/chatService';
 
 const ChatContext = createContext(null);
-const CHAT_HISTORY_KEY = '@smart_city_mobile/chat_sessions_v1';
+
+/**
+ * Returns a user-specific AsyncStorage key so that each user's chat sessions
+ * are stored in an isolated partition. This prevents User A's history from
+ * being visible to User B after a logout/login cycle.
+ */
+function getChatStorageKey(userId) {
+  return `@smart_city_mobile/chat_sessions_v1__${userId || '_anonymous'}`;
+}
 
 function createSession() {
   const now = new Date().toISOString();
@@ -44,7 +52,7 @@ function createLocalMessage(text, from, extras = {}) {
   };
 }
 
-export function ChatProvider({ children }) {
+export function ChatProvider({ children, userId }) {
   const [isOpen, setIsOpen] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
@@ -55,8 +63,11 @@ export function ChatProvider({ children }) {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
 
+  // Re-load sessions whenever the logged-in user changes so each user sees
+  // only their own history.
   useEffect(() => {
     let mounted = true;
+    const CHAT_HISTORY_KEY = getChatStorageKey(userId);
 
     async function loadSessions() {
       try {
@@ -99,21 +110,27 @@ export function ChatProvider({ children }) {
       }
     }
 
+    // Reset state before loading the new user's sessions
+    setHydrated(false);
+    setSessions([]);
+    setActiveSessionId(null);
+    resetConversation();
     loadSessions();
 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (!hydrated) return;
 
+    const CHAT_HISTORY_KEY = getChatStorageKey(userId);
     AsyncStorage.setItem(
       CHAT_HISTORY_KEY,
       JSON.stringify({ sessions, activeSessionId }),
     ).catch(() => {});
-  }, [activeSessionId, hydrated, sessions]);
+  }, [activeSessionId, hydrated, sessions, userId]);
 
   const activeSession = useMemo(
     () => sessions.find(session => session.id === activeSessionId) ?? null,
@@ -198,6 +215,37 @@ export function ChatProvider({ children }) {
     [activeSessionId],
   );
 
+  const updateMessage = useCallback(
+    (messageId, updates, options = {}) => {
+      const sessionId = options.sessionId ?? activeSessionId;
+
+      if (!sessionId || !messageId) return;
+
+      setSessions(previous =>
+        previous.map(session => {
+          if (session.id !== sessionId) return session;
+
+          return {
+            ...session,
+            messages: session.messages.map(message => {
+              if (message.id !== messageId) return message;
+
+              const nextUpdates =
+                typeof updates === 'function' ? updates(message) : updates;
+
+              return {
+                ...message,
+                ...(nextUpdates ?? {}),
+              };
+            }),
+            updatedAt: new Date().toISOString(),
+          };
+        }),
+      );
+    },
+    [activeSessionId],
+  );
+
   const setActiveConversationId = useCallback(
     (conversationId, options = {}) => {
       const sessionId = options.sessionId ?? activeSessionId;
@@ -252,6 +300,7 @@ export function ChatProvider({ children }) {
     activeSessionId,
     messages,
     sendMessage,
+    updateMessage,
     setActiveConversationId,
     newChat,
     selectSession,

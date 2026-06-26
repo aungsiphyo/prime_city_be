@@ -13,6 +13,11 @@ const aiChatSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    messageId: {
+      type: String,
+      default: "",
+      index: true,
+    },
     role: {
       type: String,
       enum: ["user", "assistant"],
@@ -48,5 +53,6 @@ const aiChatSchema = new mongoose.Schema(
 );
 
 aiChatSchema.index({ userId: 1, conversationId: 1, createdAt: 1 });
+aiChatSchema.index({ userId: 1, conversationId: 1, messageId: 1 });
 
 module.exports = mongoose.model("AiChat", aiChatSchema);

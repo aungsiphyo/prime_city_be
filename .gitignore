@@ -12,3 +12,5 @@ Smart_city_Mobile/android/.gradle/
 Smart_city_Mobile/android/.cxx/
 
 *.log
+
+Node_Backend/exports/
