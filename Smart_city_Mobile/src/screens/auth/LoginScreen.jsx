@@ -62,6 +62,7 @@ export default function LoginScreen() {
         phone: res.user.phone,
         role: res.user.role,
         room_id: res.user.room_id,
+        room_number: res.user.room_number,
       });
     } catch (err) {
       Alert.alert('Verification failed', err.message || 'Invalid or expired OTP.');

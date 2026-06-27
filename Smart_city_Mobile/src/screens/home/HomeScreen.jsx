@@ -20,6 +20,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { fetchAnnouncements } from '../../api/announcements';
 import { fetchAdvertisements } from '../../api/advertisements';
+import { fetchProfile } from '../../api/profile';
 
 const QUICK_ACTIONS = [
   { id: 'bills', label: 'Bills', icon: 'receipt-outline', screen: 'Bills' },
@@ -50,6 +51,16 @@ const TYPE_COLORS = {
 };
 
 const AD_WINDOW_SIZE = 7;
+
+function getTimeGreeting(date) {
+  const hour = date.getHours();
+
+  if (hour >= 5 && hour < 12) return 'Good morning';
+  if (hour >= 12 && hour < 17) return 'Good afternoon';
+  if (hour >= 17 && hour < 21) return 'Good evening';
+
+  return 'Good night';
+}
 
 function getAdvertisementWindow(items, startIndex) {
   if (items.length <= AD_WINDOW_SIZE) return items;
@@ -263,12 +274,20 @@ function AdvertisementCarousel({ advertisements, loading }) {
 
 export default function HomeScreen({ navigation }) {
   const { theme } = useTheme();
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
   // chat is managed globally by ChatProvider / FloatingChat
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [announcements, setAnnouncements] = useState([]);
   const [advertisements, setAdvertisements] = useState([]);
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(true);
   const [loadingAdvertisements, setLoadingAdvertisements] = useState(true);
+  const displayName =
+    user?.fullname?.trim() || user?.name?.trim() || user?.email?.split('@')[0] || 'Resident';
+  const roomNumber = user?.room_number || null;
+  const residenceLabel = roomNumber
+    ? `Unit ${roomNumber} · Smart Residential`
+    : 'Smart Residential';
+  const timeGreeting = getTimeGreeting(currentTime);
   const quickActions =
     user?.role === 'Admin'
       ? [
@@ -283,6 +302,21 @@ export default function HomeScreen({ navigation }) {
       : QUICK_ACTIONS;
 
   const navigateTo = screen => navigation.navigate(screen);
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 60 * 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const refreshProfile = useCallback(async () => {
+    try {
+      const profile = await fetchProfile();
+      setUser(current => ({ ...current, ...profile }));
+    } catch (err) {
+      if (err.sessionExpired) return;
+    }
+  }, [setUser]);
 
   const loadAnnouncements = useCallback(async () => {
     setLoadingAnnouncements(true);
@@ -317,9 +351,11 @@ export default function HomeScreen({ navigation }) {
 
   useFocusEffect(
     useCallback(() => {
+      setCurrentTime(new Date());
+      refreshProfile();
       loadAnnouncements();
       loadAdvertisements();
-    }, [loadAdvertisements, loadAnnouncements]),
+    }, [loadAdvertisements, loadAnnouncements, refreshProfile]),
   );
 
   return (
@@ -332,13 +368,18 @@ export default function HomeScreen({ navigation }) {
           <>
             <View style={styles.hero}>
               <Text style={[styles.greeting, { color: theme.subtext }]}>
-                Good morning
+                {timeGreeting}
               </Text>
-              <Text style={[styles.heading, { color: theme.text }]}>
-                Welcome, Resident
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
+                style={[styles.heading, { color: theme.text }]}
+              >
+                Welcome, {displayName}
               </Text>
               <Text style={[styles.sub, { color: theme.subtext }]}>
-                Unit A-101 · Smart Residential
+                {residenceLabel}
               </Text>
             </View>
 
@@ -465,7 +506,6 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 26,
     fontWeight: '700',
-    letterSpacing: -0.5,
     marginBottom: 4,
   },
   sub: { fontSize: 14 },

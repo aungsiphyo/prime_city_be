@@ -1,6 +1,7 @@
 const aiService = require("../services/ai.service");
 const AiChat = require("../models/AiChat");
 const AiFeedback = require("../models/AiFeedback");
+const User = require("../models/User");
 
 function getUserId(user) {
   return user?.id || user?._id || null;
@@ -121,17 +122,28 @@ async function postChat(req, res) {
 
     const { message, conversationId, history, enableRag, ragContext } =
       req.body;
+    const userId = getUserId(req.user);
+    const currentUser = await User.findById(userId)
+      .select("_id fullname role room_id resident_uid")
+      .lean();
+
+    if (!currentUser) {
+      return res.status(401).json({
+        success: false,
+        message: "Authenticated user account was not found",
+      });
+    }
 
     const result = await aiService.chat({
       message,
       conversationId,
       history,
-      user: req.user || null,
+      user: currentUser,
       enableRag: enableRag !== false,
       audienceHint: ragContext,
     });
 
-    await persistChatTurn(req.user, result);
+    await persistChatTurn(currentUser, result);
 
     return res.status(200).json({
       success: true,

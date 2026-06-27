@@ -5,7 +5,6 @@ const {
   getMyChatHistory,
 } = require("../controllers/ai.controller");
 const requireAuth = require("../middleware/authMiddleware");
-const optionalAuth = require("../middleware/optionalAuthMiddleware");
 const {
   aiRateLimit,
   requireAIAuthIfConfigured,
@@ -15,7 +14,7 @@ const router = express.Router();
 
 router.post(
   "/chat",
-  optionalAuth,
+  requireAuth,
   requireAIAuthIfConfigured,
   aiRateLimit,
   postChat,

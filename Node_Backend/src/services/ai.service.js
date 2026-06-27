@@ -69,10 +69,18 @@ function buildUserContext(user) {
 
   const name = (user.fullname || user.name || "").trim();
   const role = (user.role || "Citizen").trim();
+  const room = String(user.room_id || user.roomNumber || "").trim();
+  const details = [`User role: ${role}.`];
 
-  if (!name) return `User role: ${role}.`;
+  if (name) details.unshift(`Current user name: ${name}.`);
+  if (room) details.push(`Linked room reference: ${room}.`);
 
-  return `Current user name: ${name}. User role: ${role}. Address the user by name when it feels natural.`;
+  details.push(
+    "This identity belongs to the authenticated user only. Never infer or expose another user's data.",
+  );
+  if (name) details.push("Address the user by name when it feels natural.");
+
+  return details.join(" ");
 }
 
 function ensureConversationId(conversationId) {
@@ -160,6 +168,29 @@ function formatAmount(value) {
 }
 
 function buildToolAssistantContent(toolName, result) {
+  if (toolName === "getMyProfile") {
+    if (!result.found) {
+      return "သင့်အကောင့်အချက်အလက် မတွေ့သေးပါ။ ပြန်လည်ဝင်ရောက်ပြီး စမ်းကြည့်ပါ။";
+    }
+
+    if (result.requestedField === "name") {
+      return `သင့်အမည်က ${result.name} ဖြစ်ပါတယ်။`;
+    }
+
+    const roomText = result.roomNumber
+      ? `အခန်း ${result.roomNumber}`
+      : "ချိတ်ဆက်ထားသောအခန်း မရှိသေးပါ";
+    const residentText = result.residentUid
+      ? `၊ Resident ID ${result.residentUid}`
+      : "";
+
+    return (
+      `သင့်အမည်က ${result.name} ဖြစ်ပါတယ်။ ` +
+      `အကောင့်အမျိုးအစား ${result.role}၊ ${roomText}${residentText} ဖြစ်ပါတယ်။ ` +
+      `Email ${result.email}၊ ဖုန်း ${result.phone} ပါ။`
+    );
+  }
+
   if (toolName === "getParkingStatus") {
     return (
       `Visitor parking slot ${result.visitor.availableSlot} ခုကျန်ပါတယ်။ ` +

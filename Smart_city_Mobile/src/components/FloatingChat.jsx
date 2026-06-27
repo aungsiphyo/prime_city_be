@@ -220,7 +220,6 @@ export default function FloatingChat() {
   const { theme } = useTheme();
   const { user } = useAuth();
   const userName = (user?.fullname || user?.name || '').trim();
-  const greetingName = userName ? ` ${userName.split(' ')[0]}` : '';
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -360,11 +359,16 @@ export default function FloatingChat() {
     sendMessage(userText, 'user', { sessionId: targetSessionId });
 
     try {
+      const recentHistory = messages.slice(-8).map(item => ({
+        role: item.from === 'bot' ? 'assistant' : 'user',
+        content: item.text,
+      }));
       const result = await sendAIMessage(userText, {
         conversationId: activeSession?.conversationId,
         syncGlobalConversationId: false,
         enableMcpTools: true,
         ragContext: 'resident',
+        history: recentHistory,
       });
 
       if (result?.conversationId) {
