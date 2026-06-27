@@ -223,7 +223,8 @@ See the CONTRIBUTING.md if present; otherwise use the standard fork â†’ branch â
 
 ## License
 
-Add your project license (e.g., MIT) here.
+TTU (CEIT Department)
+Smart Innovators
 
 ---
 
