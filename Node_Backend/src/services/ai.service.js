@@ -43,6 +43,7 @@ Rules:
 - For community rules, fees, policies, manuals, and notices, do not invent facts.
 - If data is missing, say you cannot find it.
 - For SOS or emergency messages, give calm immediate safety guidance. Do not claim an alert was sent unless backend data confirms it.
+- If the user context includes a name, address the user by that name naturally (e.g. “ကိုဖြိုး”, “မဆု”) when it feels appropriate, without overusing it.
 `;
 
 const RESPONSE_STYLE_PROMPT =
@@ -57,6 +58,21 @@ function createMessage(role, content, extras = {}) {
     timestamp: new Date().toISOString(),
     ...extras,
   };
+}
+
+/**
+ * Builds a concise user-context string for injection into the system prompt.
+ * Lets the AI know who it is talking to for personalized, faster responses.
+ */
+function buildUserContext(user) {
+  if (!user) return null;
+
+  const name = (user.fullname || user.name || "").trim();
+  const role = (user.role || "Citizen").trim();
+
+  if (!name) return `User role: ${role}.`;
+
+  return `Current user name: ${name}. User role: ${role}. Address the user by name when it feels natural.`;
 }
 
 function ensureConversationId(conversationId) {
@@ -592,11 +608,18 @@ async function chat({
     const baseMessages = [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "system", content: RESPONSE_STYLE_PROMPT },
-      {
-        role: "system",
-        content: `Detected intent: ${intent.name}. Confidence: ${intent.confidence}.`,
-      },
     ];
+
+    // Inject user identity so the AI can personalize responses immediately
+    const userContext = buildUserContext(user);
+    if (userContext) {
+      baseMessages.push({ role: "system", content: userContext });
+    }
+
+    baseMessages.push({
+      role: "system",
+      content: `Detected intent: ${intent.name}. Confidence: ${intent.confidence}.`,
+    });
 
     if (ragContext) {
       baseMessages.push({

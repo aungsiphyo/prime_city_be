@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { loadChatHistory, sendMessage } from '../../services/chatService';
 
@@ -25,6 +26,8 @@ const SHEET_HEIGHT = SCREEN_HEIGHT * 0.82;
 
 export default function ChatSheet({ visible, onClose }) {
   const { theme } = useTheme();
+  const { user } = useAuth();
+  const userName = (user?.fullname || user?.name || '').trim();
   const insets = useSafeAreaInsets();
   const listRef = useRef(null);
   const slideAnim = useRef(new Animated.Value(SHEET_HEIGHT)).current;
@@ -224,9 +227,9 @@ export default function ChatSheet({ visible, onClose }) {
                   <Ionicons name="chevron-down" size={26} color={theme.primaryText} />
                 </TouchableOpacity>
                 <View style={styles.headerTitles}>
-                  <Text style={[styles.headerTitle, { color: theme.primaryText }]}>AI Assistant</Text>
+                  <Text style={[styles.headerTitle, { color: theme.primaryText }]}>SmartRes AI</Text>
                   <Text style={[styles.headerSub, { color: theme.primaryText, opacity: 0.85 }]}>
-                    RAG + MCP ready
+                    {userName ? `မင်္ဂလာပါ, ${userName.split(' ')[0]} 👋` : 'RAG + MCP ready'}
                   </Text>
                 </View>
                 <View style={styles.headerSpacer} />
@@ -252,7 +255,9 @@ export default function ChatSheet({ visible, onClose }) {
                       <Ionicons name="chatbubbles-outline" size={28} color={theme.primary} />
                     </View>
                     <Text style={[styles.emptyTitle, { color: theme.text }]}>
-                      Ask me anything
+                      {userName
+                        ? `မင်္ဂလာပါ ${userName.split(' ')[0]} 👋\nဘာကူညီပေးရမလဲ?`
+                        : 'မင်္ဂလာပါ 👋\nဘာကူညီပေးရမလဲ?'}
                     </Text>
                     <Text style={[styles.emptySub, { color: theme.subtext }]}>
                       Bills, helpers, visitors, parking, announcements — powered by RAG and MCP tools.

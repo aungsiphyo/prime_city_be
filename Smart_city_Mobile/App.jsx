@@ -15,7 +15,8 @@ import {
 
 function AppContent() {
   const { theme } = useTheme();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id || user?._id || null;
 
   useEffect(() => {
     if (!isAuthenticated) return undefined;
@@ -26,14 +27,14 @@ function AppContent() {
   }, [isAuthenticated]);
 
   return (
-    <>
+    <ChatProvider userId={userId}>
       <StatusBar
         barStyle={theme.statusBar}
         backgroundColor={theme.background}
       />
       <AppNavigator />
       {isAuthenticated && <FloatingChat />}
-    </>
+    </ChatProvider>
   );
 }
 
@@ -43,9 +44,7 @@ export default function App() {
       <SafeAreaProvider>
         <ThemeProvider>
           <AuthProvider>
-            <ChatProvider>
-              <AppContent />
-            </ChatProvider>
+            <AppContent />
           </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>

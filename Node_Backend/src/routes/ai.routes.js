@@ -1,5 +1,9 @@
 const express = require("express");
-const { postChat, getMyChatHistory } = require("../controllers/ai.controller");
+const {
+  postChat,
+  postFeedback,
+  getMyChatHistory,
+} = require("../controllers/ai.controller");
 const requireAuth = require("../middleware/authMiddleware");
 const optionalAuth = require("../middleware/optionalAuthMiddleware");
 const {
@@ -16,6 +20,7 @@ router.post(
   aiRateLimit,
   postChat,
 );
+router.post("/feedback", requireAuth, postFeedback);
 router.get("/history", requireAuth, getMyChatHistory);
 
 module.exports = router;
