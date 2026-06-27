@@ -257,8 +257,7 @@ router.post("/forgot-password/step2", async (req, res) => {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
+    user.password = newPassword;
     user.otp = undefined;
     user.otpExpires = undefined;
 
