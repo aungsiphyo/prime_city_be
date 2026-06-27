@@ -1,4 +1,5 @@
 const TOOL_INTENTS = new Set([
+  "getMyProfile",
   "getParkingStatus",
   "getRecentParkingEvents",
   "getSOSAlerts",
@@ -115,6 +116,55 @@ function classifyIntent(message) {
     hasAny(text, ["အရေးပေါ်", "ကယ်ပါ", "မီးလောင်", "ဆေးရုံ", "ambulance"])
   ) {
     return { name: "emergency", confidence: 1, toolName: null };
+  }
+
+  if (
+    hasAny(text, [
+      "what is my name",
+      "what's my name",
+      "who am i",
+      "ငါ့နာမည်",
+      "ကျွန်တော့်နာမည်",
+      "ကျွန်မနာမည်",
+      "ကျွန်ုပ်နာမည်",
+    ])
+  ) {
+    return {
+      name: "getMyProfile",
+      confidence: 1,
+      toolName: "getMyProfile",
+      args: { field: "name" },
+    };
+  }
+
+  if (
+    hasAny(text, [
+      "my email",
+      "my phone",
+      "my resident id",
+      "my user id",
+      "my profile",
+      "my account",
+      "my data",
+      "personal information",
+      "account information",
+      "ငါ့အီးမေးလ်",
+      "ငါ့ဖုန်း",
+      "ကျွန်တော့်ဖုန်း",
+      "ကျွန်မဖုန်း",
+      "ကိုယ်ရေးအချက်အလက်",
+      "ငါ့အချက်အလက်",
+      "ကျွန်တော့်အချက်အလက်",
+      "ကျွန်မအချက်အလက်",
+      "ပရိုဖိုင်",
+    ])
+  ) {
+    return {
+      name: "getMyProfile",
+      confidence: 1,
+      toolName: "getMyProfile",
+      args: { field: "profile" },
+    };
   }
 
   if (

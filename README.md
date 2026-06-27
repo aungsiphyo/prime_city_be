@@ -83,6 +83,8 @@ Resident Mobile <--> REST API (Express) <--> MongoDB
 - CRUD for rooms, service bills, announcements, advertisements, helpers
 - Admin routes for management
 - Resident AI assistant for bills, parking, visitors, helpers, maintenance, announcements, room data, policies, and general chat
+- Personalized AI identity/profile answers loaded from the authenticated user's current database record
+- User-isolated mobile chat sessions and backend history/data queries scoped by authenticated user ID
 - AI feedback collection with thumbs up/down ratings on assistant answers
 - AI training/review data export from `AiChat` + `AiFeedback` with PII redaction
 
@@ -93,7 +95,7 @@ Resident Mobile <--> REST API (Express) <--> MongoDB
 - `GET /api/parking` — parking status
 - `POST /api/sos` — send SOS alert
 - `GET /api/notifications` — list notifications
-- `POST /api/ai/chat` — ask the AI assistant
+- `POST /api/ai/chat` — ask the authenticated, user-aware AI assistant
 - `GET /api/ai/history` — load authenticated user's AI chat history
 - `POST /api/ai/feedback` — save thumbs up/down feedback for an assistant answer
 - `GET /api/knowledge` / `POST /api/knowledge` — manage RAG knowledge base content

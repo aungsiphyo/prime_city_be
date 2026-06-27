@@ -185,6 +185,31 @@ async function resolveCurrentRoom(user) {
   };
 }
 
+async function getMyProfile(user, args = {}) {
+  const resolved = await resolveCurrentRoom(user);
+  const currentUser = resolved.user;
+
+  if (!currentUser) {
+    return {
+      found: false,
+      message: "Login required",
+    };
+  }
+
+  return {
+    found: true,
+    message: resolved.message,
+    name: currentUser.fullname,
+    email: currentUser.email,
+    phone: currentUser.phone,
+    role: currentUser.role,
+    residentUid: currentUser.resident_uid || null,
+    roomNumber: resolved.room?.room_name || currentUser.room_id || null,
+    roomLinked: Boolean(resolved.found),
+    requestedField: args.field || "profile",
+  };
+}
+
 async function getParkingStatus() {
   const visitor = await Parking.findOne({ type: "visitor" }).lean();
   const resident = await Parking.findOne({ type: "resident" }).lean();
@@ -597,6 +622,9 @@ async function getResidentAccessInfo(user) {
 
 async function runTool(name, args = {}, user) {
   switch (name) {
+    case "getMyProfile":
+      return getMyProfile(user, args);
+
     case "getParkingStatus":
       return getParkingStatus();
 
@@ -641,4 +669,5 @@ async function runTool(name, args = {}, user) {
 module.exports = {
   runTool,
   resolveCurrentRoom,
+  getMyProfile,
 };

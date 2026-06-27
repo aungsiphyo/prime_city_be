@@ -6,6 +6,7 @@ const User = require("../models/User");
 const Room = require("../models/Room");
 const Visitor = require("../models/Visitor");
 const sendEmail = require("../utils/sendEmail");
+const { resolveCurrentRoom } = require("../services/aiTools.service");
 
 const router = express.Router();
 
@@ -190,6 +191,7 @@ router.post("/login/step2", async (req, res) => {
     user.otpExpires = undefined;
 
     await user.save();
+    const resolvedRoom = await resolveCurrentRoom(user);
 
     res.status(200).json({
       accessToken,
@@ -203,6 +205,7 @@ router.post("/login/step2", async (req, res) => {
         phone: user.phone,
         role: user.role,
         room_id: user.room_id || null,
+        room_number: resolvedRoom.room?.room_name || null,
       },
     });
   } catch (err) {
