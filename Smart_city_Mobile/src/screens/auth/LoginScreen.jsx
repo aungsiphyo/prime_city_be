@@ -17,7 +17,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { loginStep1, loginStep2 } from '../../api/auth';
 
-export default function LoginScreen() {
+export default function LoginScreen({ navigation }) {
   const { theme } = useTheme();
   const { signIn } = useAuth();
   const insets = useSafeAreaInsets();
@@ -123,6 +123,13 @@ export default function LoginScreen() {
               </View>
 
               <TouchableOpacity
+                style={styles.forgotPasswordContainer}
+                onPress={() => navigation.navigate('ForgotPassword')}
+                activeOpacity={0.7}>
+                <Text style={[styles.forgotPasswordText, { color: theme.primary }]}>Forgot Password?</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={[styles.button, { backgroundColor: theme.primary }]}
                 onPress={onContinue}
                 disabled={loading}
@@ -221,4 +228,13 @@ const styles = StyleSheet.create({
   buttonText: { fontSize: 16, fontWeight: '700' },
   backLink: { alignItems: 'center', marginTop: 16 },
   backLinkText: { fontSize: 14, fontWeight: '600' },
+  forgotPasswordContainer: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });

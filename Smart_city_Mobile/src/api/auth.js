@@ -28,3 +28,17 @@ export async function logout(email) {
     await clearTokens();
   }
 }
+
+export async function forgotPasswordStep1(email) {
+  return apiRequest('/auth/forgot-password/step1', {
+    method: 'POST',
+    body: { email },
+  });
+}
+
+export async function forgotPasswordStep2(email, otp, newPassword) {
+  return apiRequest('/auth/forgot-password/step2', {
+    method: 'POST',
+    body: { email, otp, newPassword },
+  });
+}
