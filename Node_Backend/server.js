@@ -31,7 +31,7 @@ function getLocalLanIp() {
     }
   }
 
-  return "localhost";
+  return "https://smart-residential.onrender.com/";
 }
 
 function isDockerBridgeIp(ip) {
@@ -60,7 +60,7 @@ function getRegistrationFormUrl(req) {
   const requestBaseUrl = getRequestBaseUrl(req);
   if (requestBaseUrl) return `${requestBaseUrl}/register`;
 
-  return `http://${getLocalLanIp()}:${PORT}/register`;
+  return `/register`;
 }
 
 const sseClients = new Map();
@@ -317,10 +317,10 @@ setupMQTT(io);
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`\n🚀 Server running on port ${PORT}`);
-  console.log(`   Dashboard  : http://localhost:5173`);
-  console.log(`   Display    : http://localhost:${PORT}/display`);
+  console.log(`   Dashboard  : https://smart-residential.onrender.com`);
+  console.log(`   Display    : https://smart-residential.onrender.com/display`);
   console.log(`   Register   : ${getRegistrationFormUrl()}`);
-  console.log(`   ESP32 scan : POST http://<LAN_IP>:${PORT}/api/qr-scan`);
-  console.log(`   Rooms API  : http://localhost:${PORT}/api/rooms`);
-  console.log(`   Ads API    : http://localhost:${PORT}/api/advertisements`);
+  console.log(`   ESP32 scan : POST https://smart-residential.onrender.com/api/qr-scan`);
+  console.log(`   Rooms API  : https://smart-residential.onrender.com/api/rooms`);
+  console.log(`   Ads API    : https://smart-residential.onrender.com/api/advertisements`);
 });

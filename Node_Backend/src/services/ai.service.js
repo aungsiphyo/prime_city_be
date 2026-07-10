@@ -5,7 +5,7 @@ const { retrieveKnowledge, buildRagContext } = require("./rag.service");
 const { classifyIntent, isToolIntent } = require("./intent.service");
 
 const OLLAMA_BASE_URL = (
-  process.env.OLLAMA_BASE_URL || "http://localhost:11434"
+  process.env.OLLAMA_BASE_URL || "https://smart-residential.onrender.com"
 ).replace(/\/+$/, "");
 
 function numberEnv(name, fallback, { min = Number.NEGATIVE_INFINITY } = {}) {
