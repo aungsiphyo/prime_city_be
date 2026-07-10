@@ -12,6 +12,11 @@ const TOOL_INTENTS = new Set([
   "createHelperRequest",
   "getAnnouncements",
   "getResidentAccessInfo",
+  "registerVisitor",
+  "reserveVisitorParking",
+  "reportLostCard",
+  "requestReplacementCard",
+  "updateContactRequest",
 ]);
 
 function normalizeMessage(message) {
@@ -282,7 +287,8 @@ function classifyIntent(message) {
 
   if (
     hasAny(text, ["rfid", "card", "scan", "ကတ်", "စကင်"]) &&
-    hasAny(text, ["latest", "recent", "နောက်ဆုံး", "အသစ်", "စာရင်း", "ဝင်"])
+    hasAny(text, ["latest", "recent", "status", "နောက်ဆုံး", "စကင်", "သို့ပါက်", "စာရင်း", "ကိုကြိုး", "ကို"]) &&
+    !hasAny(text, ["replacement", "replace", "ကတ်အသစ်", "ကတ်လဲ", "lost", "ပျောက်", "ဆုံး"])
   ) {
     return {
       name: "getLatestRfidScans",
@@ -303,8 +309,47 @@ function classifyIntent(message) {
     };
   }
 
+  // ── Visitor pre-registration (must come before generic visitor check) ──
   if (
-    hasAny(text, ["visitor", "guest", "ဧည့်", "ဧည့်", "visitor list"]) &&
+    hasAny(text, [
+      "register visitor",
+      "pre-register",
+      "preregister",
+      "visitor registration",
+      "visitor parking",
+      "parking reserve",
+      "reserve parking",
+      "ဧည့်သည်မှတ်ပုံတင်",
+      "ဧည့်သည်တင်",
+      "ဧည့်သည်ကြိုတင်",
+      "ဧည့်သည်လာမယ်",
+      "ပါကင်ကြိုတင်",
+    ])
+  ) {
+    const isParking = hasAny(text, [
+      "visitor parking", "parking reserve", "reserve parking", "ပါကင်ကြိုတင်",
+    ]) && !hasAny(text, ["status", "available", "ကျန်"]);
+
+    if (isParking) {
+      return {
+        name: "reserveVisitorParking",
+        confidence: 0.9,
+        toolName: "reserveVisitorParking",
+        args: {},
+      };
+    }
+
+    return {
+      name: "registerVisitor",
+      confidence: 0.92,
+      toolName: "registerVisitor",
+      args: {},
+    };
+  }
+
+  // ── Generic visitor list ──────────────────────────────────────
+  if (
+    hasAny(text, ["visitor", "guest", "ဧည့်", "visitor list"]) &&
     !asksRule
   ) {
     return {
@@ -344,6 +389,52 @@ function classifyIntent(message) {
       confidence: 0.84,
       toolName: "createMaintenanceRequest",
       args: buildMaintenanceArgs(message),
+    };
+  }
+
+  // ── Lost card / deactivation ──────────────────────────────────
+  if (
+    hasAny(text, ["lost card", "lost my card", "card lost", "ကတ်ပျောက်", "ကတ်ဆုံး"])
+  ) {
+    return {
+      name: "reportLostCard",
+      confidence: 0.92,
+      toolName: "reportLostCard",
+      args: { confirmed: false },
+    };
+  }
+
+  // ── Replacement card ──────────────────────────────────────────
+  if (
+    hasAny(text, ["replacement card", "new card", "replace card", "ကတ်အသစ်", "ကတ်လဲ"])
+  ) {
+    return {
+      name: "requestReplacementCard",
+      confidence: 0.9,
+      toolName: "requestReplacementCard",
+      args: { confirmed: false },
+    };
+  }
+
+  // ── Update contact info ───────────────────────────────────────
+  if (
+    hasAny(text, [
+      "update phone",
+      "change phone",
+      "update email",
+      "change email",
+      "update contact",
+      "ဖုန်းနံပါတ်ပြောင်း",
+      "ဖုန်းပြောင်း",
+      "အီးမေးလ်ပြောင်း",
+      "ဆက်သွယ်ရေးပြောင်း",
+    ])
+  ) {
+    return {
+      name: "updateContactRequest",
+      confidence: 0.88,
+      toolName: "updateContactRequest",
+      args: { confirmed: false },
     };
   }
 

@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="1550" viewBox="0 0 1900 1550">
+  <defs>
+    <style>
+      .title { font: 700 34px Arial, sans-serif; fill: #102033; }
+      .subtitle { font: 400 16px Arial, sans-serif; fill: #516173; }
+      .board { fill: #12344d; stroke: #071d2d; stroke-width: 3; rx: 8; }
+      .module { fill: #ffffff; stroke: #8294a6; stroke-width: 2; rx: 6; }
+      .powerbox { fill: #fff5f5; stroke: #d62828; stroke-width: 2; rx: 6; }
+      .note { fill: #fff9db; stroke: #d4a72c; stroke-width: 2; rx: 6; }
+      .text { font: 600 18px Arial, sans-serif; fill: #203247; }
+      .small { font: 400 14px Arial, sans-serif; fill: #516173; }
+      .pin { font: 700 15px Consolas, monospace; fill: #ffffff; }
+      .boardTitle { font: 700 26px Arial, sans-serif; fill: #ffffff; }
+      .sig { stroke: #2868b2; stroke-width: 4; fill: none; }
+      .i2c { stroke: #15966a; stroke-width: 4; fill: none; }
+      .spi { stroke: #7b2cbf; stroke-width: 4; fill: none; }
+      .five { stroke: #d62828; stroke-width: 5; fill: none; }
+      .three { stroke: #f77f00; stroke-width: 4; fill: none; }
+      .gnd { stroke: #20252b; stroke-width: 5; fill: none; }
+      .node { fill: #ffffff; stroke: #203247; stroke-width: 2; }
+    </style>
+  </defs>
+
+  <rect width="1900" height="1550" fill="#eef3f7"/>
+  <text x="55" y="58" class="title">ESP32 DevKit - Parking, RFID, LCD, SOS, and Gate Wiring</text>
+  <text x="55" y="88" class="subtitle">Matches esp32_parking_rfid_full_system.ino. Blue = GPIO, green = I2C, purple = SPI, red = +5 V, orange = +3.3 V.</text>
+
+  <rect x="735" y="150" width="430" height="960" class="board"/>
+  <text x="828" y="198" class="boardTitle">ESP32 DEVKIT V1</text>
+
+  <circle cx="755" cy="285" r="9" class="node"/><text x="785" y="291" class="pin">GPIO14 - VIS R1</text>
+  <circle cx="755" cy="345" r="9" class="node"/><text x="785" y="351" class="pin">GPIO27 - VIS R2</text>
+  <circle cx="755" cy="405" r="9" class="node"/><text x="785" y="411" class="pin">GPIO26 - RES R3</text>
+  <circle cx="755" cy="465" r="9" class="node"/><text x="785" y="471" class="pin">GPIO25 - RES R4</text>
+  <circle cx="755" cy="555" r="9" class="node"/><text x="785" y="561" class="pin">GPIO18 - VIS SERVO</text>
+  <circle cx="755" cy="615" r="9" class="node"/><text x="785" y="621" class="pin">GPIO19 - RES SERVO</text>
+  <circle cx="755" cy="705" r="9" class="node"/><text x="785" y="711" class="pin">GPIO13 - SOS BUTTON</text>
+  <circle cx="755" cy="765" r="9" class="node"/><text x="785" y="771" class="pin">GPIO23 - BUZZER</text>
+
+  <circle cx="1145" cy="285" r="9" class="node"/><text x="945" y="291" class="pin">GPIO21 - LCD1 SDA</text>
+  <circle cx="1145" cy="335" r="9" class="node"/><text x="945" y="341" class="pin">GPIO22 - LCD1 SCL</text>
+  <circle cx="1145" cy="405" r="9" class="node"/><text x="945" y="411" class="pin">GPIO16 - LCD2 SDA</text>
+  <circle cx="1145" cy="455" r="9" class="node"/><text x="945" y="461" class="pin">GPIO17 - LCD2 SCL</text>
+
+  <circle cx="1145" cy="555" r="9" class="node"/><text x="1003" y="561" class="pin">GPIO5 - SS</text>
+  <circle cx="1145" cy="615" r="9" class="node"/><text x="990" y="621" class="pin">GPIO32 - SCK</text>
+  <circle cx="1145" cy="675" r="9" class="node"/><text x="978" y="681" class="pin">GPIO33 - MOSI</text>
+  <circle cx="1145" cy="735" r="9" class="node"/><text x="978" y="741" class="pin">GPIO35 - MISO</text>
+  <circle cx="1145" cy="795" r="9" class="node"/><text x="995" y="801" class="pin">GPIO4 - RST</text>
+
+  <circle cx="820" cy="1065" r="9" class="node"/><text x="840" y="1071" class="pin">5V / VIN</text>
+  <circle cx="950" cy="1065" r="9" class="node"/><text x="910" y="1035" class="pin">3V3</text>
+  <circle cx="1080" cy="1065" r="9" class="node"/><text x="1032" y="1071" class="pin">GND</text>
+
+  <rect x="50" y="175" width="560" height="330" class="module"/>
+  <text x="170" y="215" class="text">FOUR ACTIVE-LOW PARKING IR SENSORS</text>
+  <text x="90" y="270" class="small">Visitor R1 OUT</text>
+  <text x="90" y="330" class="small">Visitor R2 OUT</text>
+  <text x="90" y="390" class="small">Resident R3 OUT</text>
+  <text x="90" y="450" class="small">Resident R4 OUT</text>
+  <text x="335" y="270" class="small">VCC: 3.3 V preferred</text>
+  <text x="335" y="310" class="small">GND: common</text>
+  <text x="335" y="350" class="small">If powered at 5 V, level-shift OUT.</text>
+  <text x="335" y="390" class="small">ESP32 GPIO maximum: 3.3 V.</text>
+  <path d="M610 270 L675 270 L675 285 L755 285" class="sig"/>
+  <path d="M610 330 L665 330 L665 345 L755 345" class="sig"/>
+  <path d="M610 390 L655 390 L655 405 L755 405" class="sig"/>
+  <path d="M610 450 L645 450 L645 465 L755 465" class="sig"/>
+
+  <rect x="50" y="545" width="560" height="170" class="module"/>
+  <text x="175" y="585" class="text">VISITOR AND RESIDENT GATE SERVOS</text>
+  <text x="90" y="635" class="small">Visitor signal -> GPIO18</text>
+  <text x="335" y="635" class="small">Resident signal -> GPIO19</text>
+  <text x="90" y="680" class="small">Both: external +5 V, common GND, 470-1000 uF capacitor</text>
+  <path d="M610 625 L685 625 L685 555 L755 555" class="sig"/>
+  <path d="M610 665 L705 665 L705 615 L755 615" class="sig"/>
+
+  <rect x="50" y="765" width="560" height="240" class="module"/>
+  <text x="230" y="805" class="text">SOS + BUZZER DRIVER</text>
+  <text x="90" y="855" class="small">Normally-open SOS button: GPIO13 to GND</text>
+  <text x="90" y="900" class="small">GPIO23 -> 1k -> 2N2222 base; base -> 10k -> GND</text>
+  <text x="90" y="935" class="small">Emitter -> GND; collector -> buzzer negative</text>
+  <text x="90" y="970" class="small">Buzzer positive -> +5 V; diode across inductive buzzer</text>
+  <path d="M610 850 L670 850 L670 705 L755 705" class="sig"/>
+  <path d="M610 900 L690 900 L690 765 L755 765" class="sig"/>
+
+  <rect x="1260" y="165" width="570" height="195" class="module"/>
+  <text x="1400" y="205" class="text">PARKING LCD 20x4, ADDRESS 0x27</text>
+  <text x="1300" y="250" class="small">GPIO21 SDA -> level shifter LV1 -> HV1 -> LCD SDA</text>
+  <text x="1300" y="285" class="small">GPIO22 SCL -> level shifter LV2 -> HV2 -> LCD SCL</text>
+  <text x="1300" y="320" class="small">LV=3.3 V, HV=5 V, LCD VCC=5 V, common GND</text>
+  <path d="M1145 285 L1200 285 L1200 250 L1260 250" class="i2c"/>
+  <path d="M1145 335 L1220 335 L1220 285 L1260 285" class="i2c"/>
+
+  <rect x="1260" y="390" width="570" height="195" class="module"/>
+  <text x="1390" y="430" class="text">RFID RESULT LCD 20x4, ADDRESS 0x27</text>
+  <text x="1300" y="475" class="small">GPIO16 SDA -> level shifter LV1 -> HV1 -> LCD SDA</text>
+  <text x="1300" y="510" class="small">GPIO17 SCL -> level shifter LV2 -> HV2 -> LCD SCL</text>
+  <text x="1300" y="545" class="small">Separate physical bus; LV=3.3 V, HV/LCD=5 V, common GND</text>
+  <path d="M1145 405 L1200 405 L1200 475 L1260 475" class="i2c"/>
+  <path d="M1145 455 L1220 455 L1220 510 L1260 510" class="i2c"/>
+
+  <rect x="1260" y="635" width="570" height="350" class="module"/>
+  <text x="1458" y="678" class="text">MFRC522 RFID</text>
+  <text x="1300" y="725" class="small">SDA / SS  &lt;- GPIO5</text>
+  <text x="1300" y="765" class="small">SCK       &lt;- GPIO32</text>
+  <text x="1300" y="805" class="small">MOSI      &lt;- GPIO33</text>
+  <text x="1300" y="845" class="small">MISO      -> GPIO35</text>
+  <text x="1300" y="885" class="small">RST       &lt;- GPIO4</text>
+  <text x="1300" y="925" class="small">3.3V only; GND common; IRQ not connected</text>
+  <path d="M1145 555 L1190 555 L1190 725 L1260 725" class="spi"/>
+  <path d="M1145 615 L1180 615 L1180 765 L1260 765" class="spi"/>
+  <path d="M1145 675 L1170 675 L1170 805 L1260 805" class="spi"/>
+  <path d="M1145 735 L1160 735 L1160 845 L1260 845" class="spi"/>
+  <path d="M1145 795 L1150 795 L1150 885 L1260 885" class="spi"/>
+
+  <rect x="680" y="1200" width="540" height="170" class="powerbox"/>
+  <text x="790" y="1245" class="text">REGULATED 5 V / 4 A POWER DISTRIBUTION</text>
+  <text x="730" y="1290" class="small">+5 V: ESP32 VIN, both servos, both LCDs, buzzer driver</text>
+  <text x="730" y="1325" class="small">+3.3 V from ESP32: RC522, level-shifter LV, compatible IR sensors</text>
+  <text x="730" y="1355" class="small">GND: every module and both supplies connected locally</text>
+  <path d="M820 1200 L820 1065" class="five"/>
+  <path d="M950 1200 L950 1065" class="three"/>
+  <path d="M1080 1200 L1080 1065" class="gnd"/>
+
+  <path d="M730 1265 L630 1265 L630 680 L610 680" class="five"/>
+  <path d="M730 1285 L620 1285 L620 970 L610 970" class="five"/>
+  <path d="M1170 1265 L1845 1265 L1845 320 L1830 320" class="five"/>
+  <path d="M1170 1285 L1860 1285 L1860 545 L1830 545" class="five"/>
+  <path d="M1170 1310 L1875 1310 L1875 925 L1830 925" class="three"/>
+
+  <rect x="50" y="1160" width="520" height="250" class="note"/>
+  <text x="90" y="1205" class="text">CRITICAL VOLTAGE NOTES</text>
+  <text x="90" y="1250" class="small">ESP32 GPIO and RC522 are 3.3 V only.</text>
+  <text x="90" y="1285" class="small">Use I2C level shifters for 5 V LCD backpacks.</text>
+  <text x="90" y="1320" class="small">Do not power servos from the ESP32 3V3 pin.</text>
+  <text x="90" y="1355" class="small">Add 470-1000 uF near the two servo connectors.</text>
+  <text x="90" y="1390" class="small">GPIO4/GPIO5 are boot straps; check module pull states if boot fails.</text>
+
+  <rect x="1300" y="1130" width="530" height="280" class="note"/>
+  <text x="1340" y="1175" class="text">TWO LCD BUS REQUIREMENT</text>
+  <text x="1340" y="1220" class="small">LCD1: SDA21/SCL22. LCD2: SDA16/SCL17.</text>
+  <text x="1340" y="1255" class="small">Both are 0x27, so do not join their SDA/SCL wires.</text>
+  <text x="1340" y="1290" class="small">The firmware switches the Wire object between pin pairs.</text>
+  <text x="1340" y="1325" class="small">Each LCD needs its own two-channel level shifter.</text>
+  <text x="1340" y="1360" class="small">All level-shifter and LCD grounds remain common.</text>
+
+  <line x1="690" y1="1460" x2="745" y2="1460" class="sig"/><text x="755" y="1466" class="small">GPIO</text>
+  <line x1="840" y1="1460" x2="895" y2="1460" class="i2c"/><text x="905" y="1466" class="small">I2C</text>
+  <line x1="990" y1="1460" x2="1045" y2="1460" class="spi"/><text x="1055" y="1466" class="small">SPI</text>
+  <line x1="1140" y1="1460" x2="1195" y2="1460" class="five"/><text x="1205" y="1466" class="small">+5 V</text>
+  <line x1="1300" y1="1460" x2="1355" y2="1460" class="three"/><text x="1365" y="1466" class="small">+3.3 V</text>
+  <line x1="1480" y1="1460" x2="1535" y2="1460" class="gnd"/><text x="1545" y="1466" class="small">GND</text>
+</svg>

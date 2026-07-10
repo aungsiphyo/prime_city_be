@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1280" viewBox="0 0 1800 1280">
+  <defs>
+    <style>
+      .title { font: 700 34px Arial, sans-serif; fill: #102033; }
+      .subtitle { font: 400 16px Arial, sans-serif; fill: #516173; }
+      .board { fill: #126e82; stroke: #073b4c; stroke-width: 3; rx: 8; }
+      .module { fill: #ffffff; stroke: #8294a6; stroke-width: 2; rx: 6; }
+      .powerbox { fill: #fff5f5; stroke: #d62828; stroke-width: 2; rx: 6; }
+      .text { font: 600 17px Arial, sans-serif; fill: #203247; }
+      .small { font: 400 14px Arial, sans-serif; fill: #516173; }
+      .pin { font: 700 15px Consolas, monospace; fill: #ffffff; }
+      .boardTitle { font: 700 26px Arial, sans-serif; fill: #ffffff; }
+      .sig { stroke: #2868b2; stroke-width: 4; fill: none; }
+      .five { stroke: #d62828; stroke-width: 4; fill: none; }
+      .twelve { stroke: #f77f00; stroke-width: 5; fill: none; }
+      .gnd { stroke: #20252b; stroke-width: 5; fill: none; }
+      .node { fill: #ffffff; stroke: #203247; stroke-width: 2; }
+      .note { fill: #fff9db; stroke: #d4a72c; stroke-width: 2; rx: 6; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1280" fill="#eef3f7"/>
+  <text x="55" y="58" class="title">Arduino Uno - Gate, Street Light, and Solar Tracker Wiring</text>
+  <text x="55" y="88" class="subtitle">Matches Node_Backend/Arduino/Arduino.ino. Red = +5 V, orange = +12 V, black = GND, blue = signal.</text>
+
+  <rect x="680" y="160" width="440" height="760" class="board"/>
+  <text x="798" y="207" class="boardTitle">ARDUINO UNO</text>
+
+  <circle cx="700" cy="285" r="9" class="node"/><text x="730" y="291" class="pin">D2 - TRIG</text>
+  <circle cx="700" cy="350" r="9" class="node"/><text x="730" y="356" class="pin">D3 - IR OUT</text>
+  <circle cx="700" cy="415" r="9" class="node"/><text x="730" y="421" class="pin">D4 - ECHO</text>
+  <circle cx="700" cy="480" r="9" class="node"/><text x="730" y="486" class="pin">D5 - GATE SERVO</text>
+  <circle cx="700" cy="545" r="9" class="node"/><text x="730" y="551" class="pin">D6 - LIGHT MOSFET</text>
+
+  <circle cx="1100" cy="350" r="9" class="node"/><text x="890" y="356" class="pin">A0 - STREET LDR</text>
+  <circle cx="1100" cy="480" r="9" class="node"/><text x="922" y="486" class="pin">A1 - LEFT LDR</text>
+  <circle cx="1100" cy="545" r="9" class="node"/><text x="911" y="551" class="pin">A2 - RIGHT LDR</text>
+  <circle cx="1100" cy="675" r="9" class="node"/><text x="922" y="681" class="pin">D10 - SOLAR SERVO</text>
+
+  <circle cx="770" cy="890" r="9" class="node"/><text x="790" y="896" class="pin">5V</text>
+  <circle cx="1010" cy="890" r="9" class="node"/><text x="960" y="896" class="pin">GND</text>
+
+  <rect x="70" y="170" width="300" height="180" class="module"/>
+  <text x="155" y="205" class="text">HC-SR04</text>
+  <text x="100" y="245" class="small">VCC</text>
+  <text x="100" y="280" class="small">TRIG</text>
+  <text x="100" y="315" class="small">ECHO</text>
+  <text x="270" y="245" class="small">GND</text>
+  <path d="M370 280 L535 280 L535 285 L700 285" class="sig"/>
+  <path d="M370 315 L540 315 L540 415 L700 415" class="sig"/>
+
+  <rect x="70" y="385" width="300" height="150" class="module"/>
+  <text x="128" y="420" class="text">IR OBSTACLE SENSOR</text>
+  <text x="100" y="465" class="small">VCC</text>
+  <text x="195" y="465" class="small">OUT (LOW)</text>
+  <text x="300" y="465" class="small">GND</text>
+  <path d="M370 465 L520 465 L520 350 L700 350" class="sig"/>
+
+  <rect x="70" y="585" width="300" height="130" class="module"/>
+  <text x="145" y="620" class="text">GATE SERVO</text>
+  <text x="100" y="665" class="small">+5 V</text>
+  <text x="180" y="665" class="small">SIGNAL</text>
+  <text x="285" y="665" class="small">GND</text>
+  <path d="M370 665 L550 665 L550 480 L700 480" class="sig"/>
+
+  <rect x="1390" y="180" width="330" height="150" class="module"/>
+  <text x="1463" y="217" class="text">STREET LDR MODULE</text>
+  <text x="1420" y="265" class="small">VCC</text>
+  <text x="1530" y="265" class="small">AO</text>
+  <text x="1650" y="265" class="small">GND</text>
+  <path d="M1390 265 L1250 265 L1250 350 L1100 350" class="sig"/>
+
+  <rect x="1390" y="390" width="330" height="130" class="module"/>
+  <text x="1468" y="425" class="text">LEFT LDR DIVIDER</text>
+  <text x="1430" y="470" class="small">+5 V - LDR - A1 - 10k - GND</text>
+  <path d="M1390 470 L1230 470 L1230 480 L1100 480" class="sig"/>
+
+  <rect x="1390" y="550" width="330" height="130" class="module"/>
+  <text x="1460" y="585" class="text">RIGHT LDR DIVIDER</text>
+  <text x="1430" y="630" class="small">+5 V - LDR - A2 - 10k - GND</text>
+  <path d="M1390 630 L1230 630 L1230 545 L1100 545" class="sig"/>
+
+  <rect x="1390" y="720" width="330" height="130" class="module"/>
+  <text x="1485" y="755" class="text">SOLAR SERVO</text>
+  <text x="1425" y="800" class="small">+5 V | SIGNAL | GND</text>
+  <path d="M1390 800 L1260 800 L1260 675 L1100 675" class="sig"/>
+
+  <rect x="430" y="980" width="310" height="190" class="module"/>
+  <text x="485" y="1018" class="text">LOGIC N-MOSFET</text>
+  <text x="470" y="1060" class="small">D6 - 220R - Gate</text>
+  <text x="470" y="1095" class="small">Gate - 10k - GND</text>
+  <text x="470" y="1130" class="small">Source - GND</text>
+  <text x="470" y="1158" class="small">Drain - LED negative</text>
+  <path d="M700 545 L620 545 L620 980" class="sig"/>
+
+  <rect x="80" y="1010" width="250" height="130" class="powerbox"/>
+  <text x="130" y="1048" class="text">12 V LIGHT SUPPLY</text>
+  <text x="105" y="1090" class="small">+12 V - FUSE - LED +</text>
+  <text x="105" y="1120" class="small">0 V - common GND</text>
+  <path d="M330 1070 L430 1070" class="twelve"/>
+
+  <rect x="905" y="1010" width="300" height="150" class="powerbox"/>
+  <text x="960" y="1048" class="text">REGULATED 5 V / 3 A</text>
+  <text x="940" y="1088" class="small">+5 V to board, sensors, servos</text>
+  <text x="940" y="1120" class="small">GND to every local module</text>
+  <path d="M1040 1010 L1040 950 L770 950 L770 890" class="five"/>
+  <path d="M1100 1160 L1100 1210 L1010 1210 L1010 890" class="gnd"/>
+
+  <path d="M1055 1040 L1300 1040 L1300 265 L1390 265" class="five"/>
+  <path d="M1055 1060 L1270 1060 L1270 470 L1390 470" class="five"/>
+  <path d="M1055 1080 L1285 1080 L1285 630 L1390 630" class="five"/>
+  <path d="M1055 1100 L1320 1100 L1320 800 L1390 800" class="five"/>
+  <path d="M965 1040 L410 1040 L410 245 L370 245" class="five"/>
+  <path d="M965 1060 L400 1060 L400 465 L370 465" class="five"/>
+  <path d="M965 1080 L390 1080 L390 665 L370 665" class="five"/>
+
+  <path d="M1010 1210 L1650 1210 L1650 265 L1720 265" class="gnd"/>
+  <path d="M1010 1210 L1360 1210 L1360 470 L1390 470" class="gnd"/>
+  <path d="M1010 1210 L1370 1210 L1370 630 L1390 630" class="gnd"/>
+  <path d="M1010 1210 L1380 1210 L1380 800 L1390 800" class="gnd"/>
+  <path d="M1010 1210 L280 1210 L280 315 L370 315" class="gnd"/>
+  <path d="M1010 1210 L300 1210 L300 500 L370 500" class="gnd"/>
+  <path d="M1010 1210 L285 1210 L285 690 L370 690" class="gnd"/>
+  <path d="M330 1120 L330 1210" class="gnd"/>
+
+  <rect x="1230" y="930" width="490" height="185" class="note"/>
+  <text x="1260" y="970" class="text">POWER NOTE</text>
+  <text x="1260" y="1005" class="small">Use 470-1000 uF + 100 nF across the servo 5 V rail.</text>
+  <text x="1260" y="1035" class="small">Do not send 12 V to the Arduino 5V, VIN, or GPIO pins.</text>
+  <text x="1260" y="1065" class="small">All grounds in this assembly must be connected together.</text>
+  <text x="1260" y="1095" class="small">Disconnect servo linkages while calibrating 0/90 degree angles.</text>
+</svg>
