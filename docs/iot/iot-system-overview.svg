@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980">
+  <defs>
+    <style>
+      .title { font: 700 34px Arial, sans-serif; fill: #102033; }
+      .subtitle { font: 400 17px Arial, sans-serif; fill: #516173; }
+      .panel { fill: #f7f9fc; stroke: #aebdcc; stroke-width: 2; rx: 8; }
+      .board { fill: #12344d; stroke: #071d2d; stroke-width: 2; rx: 8; }
+      .boardText { font: 700 21px Arial, sans-serif; fill: #ffffff; }
+      .module { fill: #ffffff; stroke: #8093a6; stroke-width: 2; rx: 6; }
+      .moduleText { font: 600 17px Arial, sans-serif; fill: #203247; }
+      .small { font: 400 14px Arial, sans-serif; fill: #516173; }
+      .network { stroke: #177e89; stroke-width: 5; fill: none; marker-end: url(#arrow); }
+      .wire { stroke: #3465a4; stroke-width: 3; fill: none; }
+      .power { stroke: #d62828; stroke-width: 4; fill: none; }
+      .ground { stroke: #20252b; stroke-width: 4; fill: none; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#177e89"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="980" fill="#eef3f7"/>
+  <text x="60" y="62" class="title">Smart Residential IoT - Complete System Overview</text>
+  <text x="60" y="94" class="subtitle">Three electrically separate controller assemblies communicate through the network/backend.</text>
+
+  <rect x="50" y="130" width="470" height="720" class="panel"/>
+  <text x="80" y="170" class="moduleText">Assembly 1 - Local automation</text>
+  <rect x="165" y="205" width="240" height="80" class="board"/>
+  <text x="225" y="253" class="boardText">Arduino Uno</text>
+  <rect x="90" y="340" width="185" height="80" class="module"/>
+  <text x="120" y="375" class="moduleText">Gate system</text>
+  <text x="109" y="400" class="small">HC-SR04 + IR + servo</text>
+  <rect x="295" y="340" width="185" height="80" class="module"/>
+  <text x="319" y="375" class="moduleText">Street light</text>
+  <text x="316" y="400" class="small">LDR + MOSFET + 12 V</text>
+  <rect x="190" y="480" width="190" height="80" class="module"/>
+  <text x="219" y="515" class="moduleText">Solar tracker</text>
+  <text x="211" y="540" class="small">2 LDRs + servo</text>
+  <path d="M230 285 L180 340 M285 285 L285 340 M340 285 L285 480" class="wire"/>
+  <rect x="105" y="650" width="150" height="70" class="module"/>
+  <text x="137" y="682" class="moduleText">5 V / 3 A</text>
+  <text x="130" y="705" class="small">controller + servos</text>
+  <rect x="315" y="650" width="150" height="70" class="module"/>
+  <text x="342" y="682" class="moduleText">12 V fused</text>
+  <text x="337" y="705" class="small">street-light rail</text>
+  <path d="M180 650 L180 585 L285 585 L285 560" class="power"/>
+  <path d="M390 650 L390 420" class="power"/>
+  <text x="80" y="810" class="small">No direct network connection in the supplied Arduino code.</text>
+
+  <rect x="565" y="130" width="470" height="720" class="panel"/>
+  <text x="595" y="170" class="moduleText">Assembly 2 - Parking and access</text>
+  <rect x="680" y="205" width="240" height="80" class="board"/>
+  <text x="724" y="253" class="boardText">ESP32 DevKit</text>
+  <rect x="600" y="340" width="190" height="80" class="module"/>
+  <text x="627" y="375" class="moduleText">Parking gates</text>
+  <text x="620" y="400" class="small">4 IR + 2 servos</text>
+  <rect x="810" y="340" width="190" height="80" class="module"/>
+  <text x="847" y="375" class="moduleText">RFID access</text>
+  <text x="839" y="400" class="small">RC522 over SPI</text>
+  <rect x="600" y="480" width="190" height="80" class="module"/>
+  <text x="636" y="515" class="moduleText">Two LCDs</text>
+  <text x="618" y="540" class="small">Separate I2C pin pairs</text>
+  <rect x="810" y="480" width="190" height="80" class="module"/>
+  <text x="850" y="515" class="moduleText">SOS unit</text>
+  <text x="834" y="540" class="small">Button + buzzer driver</text>
+  <path d="M740 285 L695 340 M860 285 L905 340 M740 285 L695 480 M860 285 L905 480" class="wire"/>
+  <rect x="725" y="650" width="150" height="70" class="module"/>
+  <text x="757" y="682" class="moduleText">5 V / 4 A</text>
+  <text x="750" y="705" class="small">ESP32 + servos</text>
+  <path d="M800 650 L800 590 L800 285" class="power"/>
+  <text x="595" y="810" class="small">Publishes parking, SOS, and RFID events through MQTT/TLS.</text>
+
+  <rect x="1080" y="130" width="470" height="720" class="panel"/>
+  <text x="1110" y="170" class="moduleText">Assembly 3 - Visitor QR scanner</text>
+  <rect x="1195" y="205" width="240" height="80" class="board"/>
+  <text x="1237" y="253" class="boardText">ESP32-CAM</text>
+  <rect x="1130" y="340" width="190" height="80" class="module"/>
+  <text x="1170" y="375" class="moduleText">OV2640</text>
+  <text x="1158" y="400" class="small">On-board camera</text>
+  <rect x="1340" y="340" width="160" height="80" class="module"/>
+  <text x="1379" y="375" class="moduleText">Wi-Fi</text>
+  <text x="1360" y="400" class="small">HTTP QR POST</text>
+  <path d="M1255 285 L1225 340 M1375 285 L1420 340" class="wire"/>
+  <rect x="1235" y="500" width="160" height="70" class="module"/>
+  <text x="1267" y="532" class="moduleText">5 V / 1 A</text>
+  <text x="1258" y="555" class="small">stable local supply</text>
+  <path d="M1315 500 L1315 285" class="power"/>
+
+  <rect x="1070" y="890" width="300" height="64" class="board"/>
+  <text x="1115" y="930" class="boardText">Node.js API :5001</text>
+  <rect x="665" y="890" width="260" height="64" class="board"/>
+  <text x="711" y="930" class="boardText">MQTT Broker</text>
+  <path d="M800 850 L800 890" class="network"/>
+  <path d="M925 922 L1070 922" class="network"/>
+  <path d="M1420 420 L1420 820 L1280 890" class="network"/>
+
+  <line x1="80" y1="875" x2="125" y2="875" class="power"/>
+  <text x="135" y="881" class="small">Power rail</text>
+  <line x1="255" y1="875" x2="300" y2="875" class="wire"/>
+  <text x="310" y="881" class="small">GPIO signal</text>
+  <line x1="445" y1="875" x2="490" y2="875" class="network"/>
+  <text x="500" y="881" class="small">Network data</text>
+</svg>

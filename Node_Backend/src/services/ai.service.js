@@ -385,6 +385,100 @@ function buildToolAssistantContent(toolName, result) {
     );
   }
 
+  if (toolName === "registerVisitor") {
+    if (result.needsFollowUp) {
+      const missing = (result.missingFields || []).join(", ");
+      return `ဧည့်သည်မှတ်ပုံတင်ရန် ${missing} ပြောပါ။`;
+    }
+
+    if (result.registered) {
+      return (
+        `ဧည့်သည် ${result.name} ကို အောင်မြင်စွာ မှတ်ပုံတင်ပြီးပါပြီ။ ` +
+        `Badge ${result.badgeNumber}, UID ${result.visitorUid} ပါ။ ` +
+        `Security gate ကိုလည်း အကြောင်းကြားသွားပါပြီ။`
+      );
+    }
+
+    return `ဧည့်သည်မှတ်ပုံတင်မရသေးပါ။ ${result.message || "ပြန်လည်ကြိုးစားပါ။"}`;
+  }
+
+  if (toolName === "reserveVisitorParking") {
+    if (result.needsFollowUp) {
+      const missing = (result.missingFields || []).join(", ");
+      return `ပါကင်ကြိုတင်ထားရန် ${missing} ပြောပါ။`;
+    }
+
+    if (!result.reserved) {
+      return `ဝမ်းနည်းပါတယ်၊ ${result.message || "ပါကင် slot မရရှိနိုင်သေးပါ။"}`;
+    }
+
+    return (
+      `ဧည့်သည်ပါကင် request တင်ပြီးပါပြီ။ ` +
+      `ကား ${result.vehicleNumber}, ရက် ${result.date}, ${result.durationHours} နာရီ ပါ။ ` +
+      `Admin မှ slot အတည်ပြုပေးပါမည်။`
+    );
+  }
+
+  if (toolName === "reportLostCard") {
+    if (result.requiresConfirmation) {
+      return (
+        "သင့် RFID ကတ်ကို ပိတ်မည်ဖြစ်ပါတယ်။ " +
+        "ဤလုပ်ဆောင်ချက်သည် ကတ်ကို ထာဝစဉ် ပိတ်ပင်သွားမည်ဖြစ်သည်။\n" +
+        "ဆက်လက်လုပ်ဆောင်ရန် CONFIRM လို့ရိုက်ထည့်ပေးပါ"
+      );
+    }
+
+    if (result.deactivated) {
+      return (
+        `သင့် RFID ကတ် (UID: ${result.previousUid || "N/A"}) ကို ပိတ်ပင်ပြီးပါပြီ။ ` +
+        `Admin ကို အကြောင်းကြားပြီးပါပြီ။ ကတ်အသစ် request တင်ရန် ပြောနိုင်ပါတယ်။`
+      );
+    }
+
+    return `ကတ်ပိတ်မရနိုင်သေးပါ။ ${result.message || "ပြန်လည်ကြိုးစားပါ။"}`;
+  }
+
+  if (toolName === "requestReplacementCard") {
+    if (result.requiresConfirmation) {
+      return (
+        "ကတ်အသစ် request တင်မည်ဖြစ်ပါတယ်။ " +
+        "ဆက်လက်လုပ်ဆောင်ရန် CONFIRM လို့ရိုက်ထည့်ပေးပါ"
+      );
+    }
+
+    if (result.requested) {
+      return (
+        `ကတ်အသစ် request (ID: ${result.requestId}) တင်ပြီးပါပြီ။ ` +
+        `Admin မှ မကြာမီ ဆောင်ရွက်ပေးပါမည်။`
+      );
+    }
+
+    return `Request မတင်နိုင်သေးပါ။ ${result.message || "ပြန်လည်ကြိုးစားပါ။"}`;
+  }
+
+  if (toolName === "updateContactRequest") {
+    if (result.needsFollowUp) {
+      return "ဖုန်းနံပါတ် သို့မဟုတ် Email အသစ်ကို ပြောပါ။";
+    }
+
+    if (result.requiresConfirmation) {
+      const changeList = (result.changes || []).join(", ");
+      return (
+        `ဆက်သွယ်ရေးအချက်အလက် ပြောင်းလဲမည်: ${changeList}။\n` +
+        "ဆက်လက်လုပ်ဆောင်ရန် CONFIRM လို့ရိုက်ထည့်ပေးပါ"
+      );
+    }
+
+    if (result.submitted) {
+      return (
+        `ဆက်သွယ်ရေးပြောင်းလဲမှု request (ID: ${result.requestId}) တင်ပြီးပါပြီ။ ` +
+        `Admin မှ မကြာမီ အတည်ပြုပေးပါမည်။`
+      );
+    }
+
+    return `Request မတင်နိုင်သေးပါ။ ${result.message || "ပြန်လည်ကြိုးစားပါ။"}`;
+  }
+
   return "Tool result ရရှိပါတယ်။";
 }
 
@@ -587,6 +681,65 @@ async function chat({
   }
 
   try {
+    // ── CONFIRM flow for high-risk actions ──────────────────────────────────
+    const CONFIRM_TOOL_KEYWORDS = {
+      reportLostCard: ["ကတ်ကို ပိတ်", "ပိတ်ပင်", "RFID ကတ်ကို", "deactivate", "lost card", "ကတ်ပျောက်"],
+      requestReplacementCard: ["ကတ်အသစ် request", "replacement card", "replace card"],
+      updateContactRequest: ["ဆက်သွယ်ရေးအချက်အလက် ပြောင်း", "update contact", "change phone", "change email"],
+    };
+
+    if (trimmed.trim().toUpperCase() === "CONFIRM") {
+      const recentHistory = history.slice(-6);
+      let confirmedToolName = null;
+      let confirmedArgs = {};
+
+      for (let i = recentHistory.length - 1; i >= 0; i--) {
+        const entry = recentHistory[i];
+        if (entry.role !== "assistant") continue;
+        const content = (entry.content || "").toLowerCase();
+        for (const [toolName, keywords] of Object.entries(CONFIRM_TOOL_KEYWORDS)) {
+          if (keywords.some((kw) => content.includes(kw.toLowerCase()))) {
+            confirmedToolName = toolName;
+            // Extract any args from preceding user message
+            const prevUser = recentHistory[i - 1];
+            if (prevUser && prevUser.role === "user") {
+              const prevText = prevUser.content || "";
+              if (toolName === "updateContactRequest") {
+                const phoneMatch = prevText.match(/\b09\d{7,9}\b|\b\+?95\d{8,9}\b/);
+                const emailMatch = prevText.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+                if (phoneMatch) confirmedArgs.newPhone = phoneMatch[0];
+                if (emailMatch) confirmedArgs.newEmail = emailMatch[0];
+              }
+            }
+            break;
+          }
+        }
+        if (confirmedToolName) break;
+      }
+
+      if (confirmedToolName) {
+        const toolResult = await runTool(confirmedToolName, { ...confirmedArgs, confirmed: true }, user);
+        toolCalls = [{ function: { name: confirmedToolName, arguments: { confirmed: true } } }];
+        assistantContent = buildToolAssistantContent(confirmedToolName, toolResult);
+
+        const assistantMessage = createMessage("assistant", assistantContent, {
+          toolCalls, knowledgeSources, intent,
+        });
+
+        return {
+          conversationId: resolvedConversationId,
+          userMessage,
+          assistantMessage,
+          toolCalls,
+          knowledgeSources,
+          model: OLLAMA_MODEL,
+          usedFallback,
+          intent,
+        };
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     if (isToolIntent(intent)) {
       const toolResult = await runTool(intent.toolName, intent.args || {}, user);
 

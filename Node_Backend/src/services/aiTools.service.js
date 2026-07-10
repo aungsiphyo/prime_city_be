@@ -608,6 +608,224 @@ async function getAnnouncements(args = {}, user) {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────
+// NEW HomeMate tools
+// ─────────────────────────────────────────────────────────────────
+
+async function registerVisitor(args = {}, user) {
+  const resolved = await resolveCurrentRoom(user);
+
+  if (!resolved.found) {
+    return { registered: false, message: resolved.message };
+  }
+
+  const name = String(args.name || "").trim();
+  const phone = String(args.phone || "").trim();
+  const purpose = String(args.purpose || "General").trim();
+  const visitDate = String(args.visitDate || args.visit_date || "").trim();
+  const visitTime = String(args.visitTime || args.visit_time || "").trim();
+
+  if (!name || !phone) {
+    return {
+      registered: false,
+      needsFollowUp: true,
+      message: "Visitor name and phone number are required",
+      missingFields: [!name ? "name" : null, !phone ? "phone" : null].filter(Boolean),
+    };
+  }
+
+  const nameParts = name.split(" ");
+  const firstName = nameParts[0];
+  const lastName = nameParts.slice(1).join(" ") || "-";
+
+  const visitor = await Visitor.create({
+    firstName,
+    lastName,
+    phone,
+    email: `visitor_${Date.now()}@homemate.local`,
+    purpose,
+    purposeDetail: visitDate && visitTime ? `${visitDate} ${visitTime}` : "",
+    hostName: resolved.user.fullname || "Resident",
+    agreedToTerms: true,
+    target_room_id: resolved.room._id,
+  });
+
+  return {
+    registered: true,
+    visitorId: String(visitor._id),
+    visitorUid: visitor.visitor_uid,
+    badgeNumber: visitor.badgeNumber,
+    name: visitor.fullname,
+    purpose,
+    roomNumber: resolved.room.room_name,
+  };
+}
+
+async function reserveVisitorParking(args = {}, user) {
+  const resolved = await resolveCurrentRoom(user);
+
+  if (!resolved.found) {
+    return { reserved: false, message: resolved.message };
+  }
+
+  const vehicleNumber = String(args.vehicleNumber || args.vehicle_number || "").trim();
+  const date = String(args.date || "").trim();
+  const durationHours = Number(args.durationHours || args.duration_hours || 2);
+
+  if (!vehicleNumber || !date) {
+    return {
+      reserved: false,
+      needsFollowUp: true,
+      message: "Vehicle number and date are required",
+      missingFields: [!vehicleNumber ? "vehicleNumber" : null, !date ? "date" : null].filter(Boolean),
+    };
+  }
+
+  const parking = await Parking.findOne({ type: "visitor" }).lean();
+
+  if (!parking || parking.availableSlot <= 0) {
+    return {
+      reserved: false,
+      message: "No visitor parking slots available at the moment",
+    };
+  }
+
+  await Notification.create({
+    user_id: resolved.user._id,
+    title: "Visitor Parking Request",
+    message: `Room ${resolved.room.room_name}: Vehicle ${vehicleNumber} requests visitor parking on ${date} for ${durationHours}h.`,
+    type: "parking",
+    data: { vehicleNumber, date, durationHours, roomNumber: resolved.room.room_name },
+  });
+
+  return {
+    reserved: true,
+    vehicleNumber,
+    date,
+    durationHours,
+    roomNumber: resolved.room.room_name,
+    availableSlots: parking.availableSlot,
+    message: "Parking reservation request submitted. Admin will confirm your slot.",
+  };
+}
+
+async function reportLostCard(args = {}, user) {
+  const currentUser = await getCurrentUser(user);
+
+  if (!currentUser) {
+    return { reported: false, message: "Login required" };
+  }
+
+  if (!args.confirmed) {
+    return {
+      reported: false,
+      requiresConfirmation: true,
+      message: "CONFIRM required to deactivate this card",
+    };
+  }
+
+  const previousUid = currentUser.rfid_uid || null;
+
+  await User.findByIdAndUpdate(currentUser._id, {
+    $set: { rfid_uid: null, card_status: "lost" },
+  });
+
+  await Notification.create({
+    user_id: currentUser._id,
+    title: "RFID Card Reported Lost",
+    message: `Card UID ${previousUid || "N/A"} has been deactivated for ${currentUser.fullname}. Please request a replacement.`,
+    type: "security",
+    data: { previousUid, userId: String(currentUser._id) },
+  });
+
+  return {
+    reported: true,
+    deactivated: true,
+    previousUid,
+    message: "Your RFID card has been deactivated and admin has been notified.",
+  };
+}
+
+async function requestReplacementCard(args = {}, user) {
+  const resolved = await resolveCurrentRoom(user);
+
+  if (!resolved.found) {
+    return { requested: false, message: resolved.message };
+  }
+
+  if (!args.confirmed) {
+    return {
+      requested: false,
+      requiresConfirmation: true,
+      message: "CONFIRM required to submit replacement card request",
+    };
+  }
+
+  const cardType = String(args.cardType || args.card_type || "Standard").trim();
+
+  const notification = await Notification.create({
+    user_id: resolved.user._id,
+    title: "Replacement Card Request",
+    message: `Room ${resolved.room.room_name}: ${resolved.user.fullname} requests a replacement RFID card (type: ${cardType}).`,
+    type: "admin",
+    data: { cardType, roomNumber: resolved.room.room_name },
+  });
+
+  return {
+    requested: true,
+    requestId: String(notification._id),
+    cardType,
+    roomNumber: resolved.room.room_name,
+    message: "Replacement card request submitted. Admin will process it shortly.",
+  };
+}
+
+async function updateContactRequest(args = {}, user) {
+  const currentUser = await getCurrentUser(user);
+
+  if (!currentUser) {
+    return { submitted: false, message: "Login required" };
+  }
+
+  const newPhone = String(args.newPhone || args.new_phone || "").trim();
+  const newEmail = String(args.newEmail || args.new_email || "").trim();
+
+  if (!newPhone && !newEmail) {
+    return {
+      submitted: false,
+      needsFollowUp: true,
+      message: "Please provide the new phone number or email to update",
+    };
+  }
+
+  if (!args.confirmed) {
+    return {
+      submitted: false,
+      requiresConfirmation: true,
+      message: "CONFIRM required to submit contact update request",
+    };
+  }
+
+  const changes = [];
+  if (newPhone) changes.push(`Phone: ${newPhone}`);
+  if (newEmail) changes.push(`Email: ${newEmail}`);
+
+  const notification = await Notification.create({
+    user_id: currentUser._id,
+    title: "Contact Update Request",
+    message: `${currentUser.fullname} requests contact update: ${changes.join(", ")}.`,
+    type: "admin",
+    data: { newPhone: newPhone || null, newEmail: newEmail || null, userId: String(currentUser._id) },
+  });
+
+  return {
+    submitted: true,
+    requestId: String(notification._id),
+    changes,
+    message: "Your contact update request has been sent to admin for processing.",
+  };
+}
+
 async function getResidentAccessInfo(user) {
   const currentUser = await getCurrentUser(user);
 
@@ -661,6 +879,21 @@ async function runTool(name, args = {}, user) {
     case "getResidentAccessInfo":
       return getResidentAccessInfo(user);
 
+    case "registerVisitor":
+      return registerVisitor(args, user);
+
+    case "reserveVisitorParking":
+      return reserveVisitorParking(args, user);
+
+    case "reportLostCard":
+      return reportLostCard(args, user);
+
+    case "requestReplacementCard":
+      return requestReplacementCard(args, user);
+
+    case "updateContactRequest":
+      return updateContactRequest(args, user);
+
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -670,4 +903,9 @@ module.exports = {
   runTool,
   resolveCurrentRoom,
   getMyProfile,
+  registerVisitor,
+  reserveVisitorParking,
+  reportLostCard,
+  requestReplacementCard,
+  updateContactRequest,
 };

@@ -1,13 +1,13 @@
-#include <WiFi.h>
-#include <HTTPClient.h>
 #include <ESP32QRCodeReader.h>
+#include <HTTPClient.h>
+#include <WiFi.h>
 
 // ================= WIFI =================
-const char* WIFI_SSID = "KoMyo";
-const char* WIFI_PASSWORD = "0995138020";
+const char *WIFI_SSID = "KoMyo";
+const char *WIFI_PASSWORD = "0995138020";
 
 // ================= BACKEND =================
-const char* SCAN_ENDPOINT = "http://192.168.1.9:5001/api/qr-scan";
+const char *SCAN_ENDPOINT = "http://192.168.1.9:5001/api/qr-scan";
 
 // ================= QR READER =================
 ESP32QRCodeReader reader(CAMERA_MODEL_AI_THINKER);
@@ -18,13 +18,14 @@ unsigned long lastScanAt = 0;
 const unsigned long DUPLICATE_COOLDOWN_MS = 5000;
 
 // ================= JSON ESCAPE =================
-String escapeJson(const String& input) {
+String escapeJson(const String &input) {
   String output;
   output.reserve(input.length() + 8);
 
   for (size_t i = 0; i < input.length(); i++) {
     char ch = input.charAt(i);
-    if (ch == '\\' || ch == '"') output += '\\';
+    if (ch == '\\' || ch == '"')
+      output += '\\';
     output += ch;
   }
   return output;
@@ -32,7 +33,8 @@ String escapeJson(const String& input) {
 
 // ================= WIFI CONNECT =================
 void connectWiFi() {
-  if (WiFi.status() == WL_CONNECTED) return;
+  if (WiFi.status() == WL_CONNECTED)
+    return;
 
   Serial.println();
   Serial.print("Connecting WiFi: ");
@@ -65,7 +67,7 @@ void connectWiFi() {
 }
 
 // ================= SEND QR TO SERVER =================
-void sendQrToServer(const String& qrPayload) {
+void sendQrToServer(const String &qrPayload) {
   connectWiFi();
 
   if (WiFi.status() != WL_CONNECTED) {
@@ -114,7 +116,7 @@ void sendQrToServer(const String& qrPayload) {
 }
 
 // ================= QR TASK =================
-void onQrCodeTask(void* pvParameters) {
+void onQrCodeTask(void *pvParameters) {
   struct QRCodeData qrCodeData;
 
   while (true) {
@@ -124,12 +126,12 @@ void onQrCodeTask(void* pvParameters) {
 
       if (!qrCodeData.valid) {
         Serial.print("❌ Invalid QR Payload: ");
-        Serial.println((const char*)qrCodeData.payload);
+        Serial.println((const char *)qrCodeData.payload);
         vTaskDelay(300 / portTICK_PERIOD_MS);
         continue;
       }
 
-      String payload = String((const char*)qrCodeData.payload);
+      String payload = String((const char *)qrCodeData.payload);
       payload.trim();
 
       Serial.print("Decoded QR Payload: ");
@@ -173,20 +175,11 @@ void setup() {
   reader.setup();
   reader.beginOnCore(1);
 
-  xTaskCreate(
-    onQrCodeTask,
-    "onQrCodeTask",
-    6 * 1024,
-    NULL,
-    4,
-    NULL
-  );
+  xTaskCreate(onQrCodeTask, "onQrCodeTask", 6 * 1024, NULL, 4, NULL);
 
   Serial.println("✅ ESP32-CAM Ready");
   Serial.println("Visitor should show Default QR Badge.");
 }
 
 // ================= LOOP =================
-void loop() {
-  delay(1000);
-}
+void loop() { delay(1000); }

@@ -76,19 +76,35 @@ Resident Mobile <--> REST API (Express) <--> MongoDB
 
 ## Features (summary)
 
-- Authentication (login/register) and role-based access
-- Visitor QR creation and validation
-- MQTT-based IoT communication and device control
-- Realtime notifications for SOS and other events
-- CRUD for rooms, service bills, announcements, advertisements, helpers
-- Admin routes for management
-- Resident AI assistant for bills, parking, visitors, helpers, maintenance, announcements, room data, policies, and general chat
-- Personalized AI identity/profile answers loaded from the authenticated user's current database record
-- User-isolated mobile chat sessions and backend history/data queries scoped by authenticated user ID
-- AI feedback collection with thumbs up/down ratings on assistant answers
-- AI training/review data export from `AiChat` + `AiFeedback` with PII redaction
+**Core & Resident Features:**
+- **Authentication:** Login/register with role-based access control (Admin, Resident, Guard).
+- **Dashboard:** Personalized home screen showing recent announcements, active bills, and quick actions.
+- **Visitor Management:** QR code creation for visitors and validation by guards.
+- **Parking System:** Track parking availability and visitor parking events.
+- **Service Bills:** View and manage monthly service/maintenance bills for rooms.
+- **Helper Requests:** Request maintenance or helper services and track their status.
+- **Issue Reporting:** Residents can report issues (e.g., maintenance, security) to the management.
+- **Announcements & Ads:** Broadcast announcements and display advertisements to residents.
+- **Realtime Notifications:** Push notifications and socket-based realtime updates for important events.
+- **SOS Alerts:** One-tap emergency SOS alerts with real-time broadcasting to guards and admins.
 
-## API endpoints (examples)
+**IoT & Access Control:**
+- **QR Scanner:** ESP32-CAM integration for scanning visitor QR codes.
+- **RFID Integration:** RFID-based access control with scanning logs for entry/exit tracking.
+- **MQTT Communication:** Device control and messaging via MQTT broker.
+
+**AI Assistant (Resident Chatbot):**
+- **Context-Aware AI:** Answers questions about bills, parking, visitors, policies, and room data.
+- **Personalized Responses:** AI uses the authenticated user's current database record for tailored answers.
+- **RAG Knowledge Base:** Admin-manageable knowledge base (CRUD) for the AI to query condo policies.
+- **Isolated Sessions:** User-isolated chat history and data queries.
+- **Feedback Loop:** Collect thumbs up/down ratings on AI answers for quality tracking.
+- **Data Export Pipeline:** Export AI chat history with PII redaction for safe LoRA/QLoRA fine-tuning and prompt review.
+
+**Admin & Management:**
+- **Room Management:** CRUD operations for rooms and assigning residents.
+- **User Management:** Manage residents, guards, and their roles.
+- **Admin Dashboard:** Overview of system status, active SOS, and recent reports.
 
 - `POST /api/auth/login` — authenticate user
 - `POST /api/visitor` — register a visitor

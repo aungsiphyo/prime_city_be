@@ -69,7 +69,9 @@ function ThinkingIndicator({ theme }) {
         ]}
       >
         <ActivityIndicator size="small" color={theme.primary} />
-        <Text style={[styles.thinkingText, { color: theme.subtext }]}>အဖြေရှာနေပါတယ်</Text>
+        <Text style={[styles.thinkingText, { color: theme.subtext }]}>
+          အဖြေရှာနေပါတယ်
+        </Text>
         <View style={styles.thinkingDots}>
           {dotAnims.map((anim, index) => (
             <Animated.View
@@ -121,7 +123,9 @@ function HistoryDrawer({
         ]}
       >
         <View style={styles.historyHeader}>
-          <Text style={[styles.historyTitle, { color: theme.text }]}>Chat history</Text>
+          <Text style={[styles.historyTitle, { color: theme.text }]}>
+            Chat history
+          </Text>
           <TouchableOpacity
             onPress={onClose}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -140,7 +144,9 @@ function HistoryDrawer({
           ]}
         >
           <Ionicons name="create-outline" size={17} color={theme.primary} />
-          <Text style={[styles.newChatText, { color: theme.primary }]}>New chat</Text>
+          <Text style={[styles.newChatText, { color: theme.primary }]}>
+            New chat
+          </Text>
         </TouchableOpacity>
 
         <FlatList
@@ -177,7 +183,10 @@ function HistoryDrawer({
                   </Text>
                   <Text
                     numberOfLines={1}
-                    style={[styles.historyItemPreview, { color: theme.subtext }]}
+                    style={[
+                      styles.historyItemPreview,
+                      { color: theme.subtext },
+                    ]}
                   >
                     {preview}
                   </Text>
@@ -189,7 +198,11 @@ function HistoryDrawer({
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     style={styles.historyDelete}
                   >
-                    <Ionicons name="trash-outline" size={16} color={theme.subtext} />
+                    <Ionicons
+                      name="trash-outline"
+                      size={16}
+                      color={theme.subtext}
+                    />
                   </TouchableOpacity>
                 )}
               </TouchableOpacity>
@@ -334,13 +347,13 @@ export default function FloatingChat() {
   const micIconName = listening
     ? 'mic'
     : micUnavailable
-      ? 'mic-off-outline'
-      : 'mic-outline';
+    ? 'mic-off-outline'
+    : 'mic-outline';
   const micAccessibilityLabel = listening
     ? 'Stop voice input'
     : micUnavailable
-      ? 'Voice input unavailable'
-      : 'Start voice input';
+    ? 'Voice input unavailable'
+    : 'Start voice input';
   const micAccessibilityHint = micUnavailable
     ? 'Speech recognition is unavailable on this emulator or device'
     : 'Uses speech recognition to fill the message box';
@@ -394,7 +407,8 @@ export default function FloatingChat() {
             result?.knowledgeSources ||
             result?.assistantMessage?.knowledgeSources ||
             [],
-          toolCalls: result?.toolCalls || result?.assistantMessage?.toolCalls || [],
+          toolCalls:
+            result?.toolCalls || result?.assistantMessage?.toolCalls || [],
           intent: result?.intent || result?.assistantMessage?.intent || null,
         },
       });
@@ -520,16 +534,21 @@ export default function FloatingChat() {
 
               <View style={styles.headerTitleWrap}>
                 <Text style={[styles.headerText, { color: theme.text }]}>
-                  SmartRes AI
+                  HomeMate 🏠
                 </Text>
                 {userName ? (
-                  <Text style={[styles.headerSubText, { color: theme.subtext }]}>
+                  <Text
+                    style={[styles.headerSubText, { color: theme.subtext }]}
+                  >
                     မင်္ဂလာပါ, {userName.split(' ')[0]} 👋
                   </Text>
                 ) : null}
               </View>
 
-              <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+              <TouchableOpacity
+                onPress={handleClose}
+                style={styles.closeButton}
+              >
                 <Text style={{ color: theme.subtext }}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -558,30 +577,56 @@ export default function FloatingChat() {
               ListEmptyComponent={
                 !sending ? (
                   <View style={styles.emptyState}>
-                    <View style={[styles.emptyIconWrap, { backgroundColor: theme.primaryBg }]}>
-                      <Ionicons name="sparkles" size={28} color={theme.primary} />
+                    <View
+                      style={[
+                        styles.emptyIconWrap,
+                        { backgroundColor: theme.primaryBg },
+                      ]}
+                    >
+                      <Ionicons name="home" size={28} color={theme.primary} />
                     </View>
                     <Text style={[styles.emptyGreeting, { color: theme.text }]}>
                       {userName
-                        ? `မင်္ဂလာပါ ${userName.split(' ')[0]} 👋\nဘာကူညီပေးရမလဲ?`
-                        : 'မင်္ဂလာပါ 👋\nဘာကူညီပေးရမလဲ?'}
+                        ? `မင်္ဂလာပါ ${
+                            userName.split(' ')[0]
+                          } 👋\nကျွန်တော်က HomeMate ပါ!`
+                        : 'မင်္ဂလာပါ 👋\nကျွန်တော်က HomeMate ပါ!'}
                     </Text>
                     <Text style={[styles.emptyHint, { color: theme.subtext }]}>
-                      Bills, helpers, visitors, parking, announcements — I've got you.
+                      Bills • Maintenance • Helpers • Visitors • Parking • SOS •
+                      RFID Card
                     </Text>
                     <View style={styles.quickChips}>
                       {[
-                        'ပါကင် status ဘယ်လောက်ကျန်လဲ?',
-                        'ကျွန်တော့် bill ဘယ်လောက်ကျန်လဲ?',
-                        'ကျွန်တော့် အခန်း ဘာသတင်းရှိလဲ?',
+                        'သင့် bill ဘယ်လောက်ကျန်လဲ?',
+                        'ပါကင် slot ဘယ်လောက်ကျန်လဲ?',
+                        'သင့် အခန်းမှာ ဘာသတင်းရှိသလဲ?',
+                        'ဧည့်သည် မှတ်ပုံတင်ချင်သည်',
+                        'Helper request တင်ချင်သည်',
+                        'ကဒ်ပျောက်သွားသည်',
+                        'အရေးပေါ် အကူအညီလိုသည်',
+                        'Bills များကို ငွေပေးချေချင်သည်',
                       ].map(chip => (
                         <TouchableOpacity
                           key={chip}
                           onPress={() => setText(chip)}
-                          style={[styles.quickChip, { backgroundColor: theme.primaryBg, borderColor: theme.primary }]}
+                          style={[
+                            styles.quickChip,
+                            {
+                              backgroundColor: theme.primaryBg,
+                              borderColor: theme.primary,
+                            },
+                          ]}
                           activeOpacity={0.8}
                         >
-                          <Text style={[styles.quickChipText, { color: theme.primary }]}>{chip}</Text>
+                          <Text
+                            style={[
+                              styles.quickChipText,
+                              { color: theme.primary },
+                            ]}
+                          >
+                            {chip}
+                          </Text>
                         </TouchableOpacity>
                       ))}
                     </View>
@@ -619,13 +664,17 @@ export default function FloatingChat() {
                     </Text>
 
                     {!isUser && sourceTitles.length > 0 && (
-                      <Text style={[styles.messageMeta, { color: theme.subtext }]}>
+                      <Text
+                        style={[styles.messageMeta, { color: theme.subtext }]}
+                      >
                         Knowledge: {sourceTitles.join(', ')}
                       </Text>
                     )}
 
                     {!isUser && item.toolCalls?.length > 0 && (
-                      <Text style={[styles.messageMeta, { color: theme.subtext }]}>
+                      <Text
+                        style={[styles.messageMeta, { color: theme.subtext }]}
+                      >
                         Tools: {item.toolCalls.length}
                       </Text>
                     )}
@@ -701,13 +750,18 @@ export default function FloatingChat() {
                         </TouchableOpacity>
 
                         {feedbackBusy && (
-                          <ActivityIndicator size="small" color={theme.primary} />
+                          <ActivityIndicator
+                            size="small"
+                            color={theme.primary}
+                          />
                         )}
                       </View>
                     )}
 
                     {!isUser && item.feedbackError && (
-                      <Text style={[styles.messageMeta, { color: theme.danger }]}>
+                      <Text
+                        style={[styles.messageMeta, { color: theme.danger }]}
+                      >
                         {item.feedbackError}
                       </Text>
                     )}
