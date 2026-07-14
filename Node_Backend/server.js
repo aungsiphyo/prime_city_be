@@ -237,8 +237,24 @@ app.get("/api/qr-image", async (req, res) => {
   }
 });
 
+// ================= PUBLIC STATS (no auth required) =================
+const User = require("./src/models/User");
+const Room = require("./src/models/Room");
+
+app.get("/api/public/stats", async (req, res) => {
+  try {
+    const activeResidents = await User.countDocuments({ role: "Citizen" });
+    const availableRooms = await Room.countDocuments({ resident_id: null });
+    res.json({ success: true, data: { activeResidents, availableRooms } });
+  } catch (err) {
+    console.error("Public stats error:", err);
+    res.status(500).json({ success: false, error: "Server Error" });
+  }
+});
+
 // ================= EXISTING ROUTES =================
 app.use("/api/auth", require("./src/routes/auth"));
+app.use("/api/dashboard", require("./src/routes/dashboard"));
 app.use("/api/protected", require("./src/routes/protected"));
 app.use("/api/admin", require("./src/routes/admin"));
 app.use("/api/rooms", require("./src/routes/roomRoutes"));

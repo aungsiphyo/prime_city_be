@@ -112,8 +112,12 @@ router.get("/", async (req, res) => {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
     if (req.query.resident_id) filter.resident_id = req.query.resident_id;
+    if (req.query.floor) filter.floor = Number(req.query.floor);
+    if (req.query.building) filter.building = req.query.building;
 
-    const rooms = await populateRoom(Room.find(filter).sort({ room_name: 1 }));
+    const rooms = await populateRoom(
+      Room.find(filter).sort({ building: 1, floor: 1, room_name: 1 }),
+    );
     res.status(200).json(rooms);
   } catch (error) {
     res.status(500).json({ error: error.message });
