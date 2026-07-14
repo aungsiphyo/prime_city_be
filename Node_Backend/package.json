@@ -27,6 +27,7 @@
     "mongoose": "^9.6.1",
     "mqtt": "^5.15.1",
     "nodemailer": "^8.0.7",
+    "nodemailer-sendgrid": "^1.0.3",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.3",
     "twilio": "^6.0.0"
