@@ -1,9 +1,16 @@
 const express = require("express");
 const router = express.Router();
 const Visitor = require("../models/Visitor");
+const User = require("../models/User");
 
 function cleanText(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeRfidUid(value) {
+  return String(value || "")
+    .replace(/[^a-fA-F0-9]/g, "")
+    .toUpperCase();
 }
 
 function broadcastSSE(req, event, data) {
@@ -39,6 +46,7 @@ router.post("/register", async (req, res) => {
       purpose,
       purposeDetail,
       agreedToTerms,
+      rfid_uid,
     } = req.body;
 
     const normalized = {
@@ -52,6 +60,7 @@ router.post("/register", async (req, res) => {
       purpose: cleanText(purpose) || "Other",
       purposeDetail: cleanText(purposeDetail),
       agreedToTerms: Boolean(agreedToTerms),
+      rfid_uid: cleanText(rfid_uid),
     };
 
     if (
@@ -95,11 +104,13 @@ router.post("/register", async (req, res) => {
       purposeDetail: normalized.purposeDetail,
       reason_for_visit: normalized.purposeDetail,
       agreedToTerms: normalized.agreedToTerms,
+      rfid_uid: normalized.rfid_uid || undefined,
     });
 
     await visitor.save();
 
     broadcastSSE(req, "registered", {
+      uid: visitor.visitor_uid,
       name: visitor.fullname,
       badge: visitor.badgeNumber,
     });
@@ -107,6 +118,7 @@ router.post("/register", async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       io.emit("visitor:registered", {
+        uid: visitor.visitor_uid,
         name: visitor.fullname,
         badge: visitor.badgeNumber,
         time: new Date().toISOString(),
@@ -118,6 +130,8 @@ router.post("/register", async (req, res) => {
       success: true,
       message: "Registration successful!",
       data: {
+        visitor_uid: visitor.visitor_uid,
+        rfid_uid: visitor.rfid_uid || null,
         badgeNumber: visitor.badgeNumber,
         name: visitor.fullname,
         id: visitor._id,
@@ -137,6 +151,71 @@ router.post("/register", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Internal Server Error: " + err.message,
+    });
+  }
+});
+
+router.patch("/:id/rfid", async (req, res) => {
+  try {
+    const rfidUid = normalizeRfidUid(req.body.rfid_uid || req.body.rfidUid);
+
+    if (!rfidUid) {
+      return res.status(400).json({
+        success: false,
+        message: "RFID UID is required.",
+      });
+    }
+
+    const [assignedResident, assignedVisitor] = await Promise.all([
+      User.findOne({ rfid_uid: rfidUid })
+        .select("_id resident_uid fullname")
+        .lean(),
+      Visitor.findOne({ _id: { $ne: req.params.id }, rfid_uid: rfidUid })
+        .select("_id visitor_uid fullname")
+        .lean(),
+    ]);
+
+    if (assignedResident || assignedVisitor) {
+      return res.status(409).json({
+        success: false,
+        message: "This RFID card is already assigned.",
+        assignedTo: assignedResident
+          ? { type: "resident", ...assignedResident }
+          : { type: "visitor", ...assignedVisitor },
+      });
+    }
+
+    const visitor = await Visitor.findByIdAndUpdate(
+      req.params.id,
+      { $set: { rfid_uid: rfidUid } },
+      { new: true, runValidators: true },
+    );
+
+    if (!visitor) {
+      return res.status(404).json({
+        success: false,
+        message: "Visitor not found.",
+      });
+    }
+
+    req.app.get("io")?.emit("visitor:rfid-assigned", {
+      id: visitor._id,
+      visitor_uid: visitor.visitor_uid,
+      rfid_uid: visitor.rfid_uid,
+      name: visitor.fullname,
+      time: new Date().toISOString(),
+    });
+
+    return res.json({
+      success: true,
+      message: "RFID card assigned to visitor.",
+      data: visitor,
+    });
+  } catch (err) {
+    console.error("Visitor RFID assignment error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message,
     });
   }
 });

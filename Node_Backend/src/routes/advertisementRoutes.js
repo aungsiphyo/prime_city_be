@@ -14,10 +14,27 @@ router.post("/", async (req, res) => {
 
 router.get("/", async (req, res) => {
   try {
+    const { limit, random } = req.query;
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
 
-    const ads = await Advertisement.find(filter);
+    const limitValue = Number(limit);
+    const hasValidLimit = Number.isFinite(limitValue);
+    const safeLimit = hasValidLimit ? Math.max(1, limitValue) : 7;
+
+    if (random === "true") {
+      const ads = await Advertisement.aggregate([
+        { $match: filter },
+        { $sample: { size: safeLimit } },
+      ]);
+
+      return res.status(200).json(ads);
+    }
+
+    const query = Advertisement.find(filter).sort({ created_at: -1 });
+    if (hasValidLimit) query.limit(safeLimit);
+
+    const ads = await query.lean();
     res.status(200).json(ads);
   } catch (error) {
     res.status(500).json({ error: error.message });

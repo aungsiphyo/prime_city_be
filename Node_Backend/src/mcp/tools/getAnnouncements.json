@@ -1,0 +1,22 @@
+{
+  "name": "getAnnouncements",
+  "description": "Get latest admin announcements/notices and current user's notifications",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "limit": {
+        "type": "number",
+        "description": "Maximum number of announcements and notifications to return"
+      },
+      "type": {
+        "type": "string",
+        "enum": ["General", "Maintenance", "Event"],
+        "description": "Optional announcement type filter"
+      },
+      "q": {
+        "type": "string",
+        "description": "Optional search query for announcement title or message"
+      }
+    }
+  }
+}

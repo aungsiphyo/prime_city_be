@@ -14,9 +14,14 @@ import {
   Easing,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import { useTheme } from '../context/ThemeContext';
-import { sendMessage as sendAIMessage } from '../services/chatService';
+import useVoiceAssistant from '../hooks/useVoiceAssistant';
+import {
+  sendFeedback as sendChatFeedback,
+  sendMessage as sendAIMessage,
+} from '../services/chatService';
 
 const CHAT_BOB_DISTANCE = 8;
 const CHAT_BOB_DURATION = 1800;
@@ -64,7 +69,9 @@ function ThinkingIndicator({ theme }) {
         ]}
       >
         <ActivityIndicator size="small" color={theme.primary} />
-        <Text style={[styles.thinkingText, { color: theme.subtext }]}>အဖြေရှာနေပါတယ်</Text>
+        <Text style={[styles.thinkingText, { color: theme.subtext }]}>
+          အဖြေရှာနေပါတယ်
+        </Text>
         <View style={styles.thinkingDots}>
           {dotAnims.map((anim, index) => (
             <Animated.View
@@ -116,7 +123,9 @@ function HistoryDrawer({
         ]}
       >
         <View style={styles.historyHeader}>
-          <Text style={[styles.historyTitle, { color: theme.text }]}>Chat history</Text>
+          <Text style={[styles.historyTitle, { color: theme.text }]}>
+            Chat history
+          </Text>
           <TouchableOpacity
             onPress={onClose}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -135,7 +144,9 @@ function HistoryDrawer({
           ]}
         >
           <Ionicons name="create-outline" size={17} color={theme.primary} />
-          <Text style={[styles.newChatText, { color: theme.primary }]}>New chat</Text>
+          <Text style={[styles.newChatText, { color: theme.primary }]}>
+            New chat
+          </Text>
         </TouchableOpacity>
 
         <FlatList
@@ -172,7 +183,10 @@ function HistoryDrawer({
                   </Text>
                   <Text
                     numberOfLines={1}
-                    style={[styles.historyItemPreview, { color: theme.subtext }]}
+                    style={[
+                      styles.historyItemPreview,
+                      { color: theme.subtext },
+                    ]}
                   >
                     {preview}
                   </Text>
@@ -184,7 +198,11 @@ function HistoryDrawer({
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     style={styles.historyDelete}
                   >
-                    <Ionicons name="trash-outline" size={16} color={theme.subtext} />
+                    <Ionicons
+                      name="trash-outline"
+                      size={16}
+                      color={theme.subtext}
+                    />
                   </TouchableOpacity>
                 )}
               </TouchableOpacity>
@@ -206,23 +224,48 @@ export default function FloatingChat() {
     activeSessionId,
     messages,
     sendMessage,
+    updateMessage,
     setActiveConversationId,
     newChat,
     selectSession,
     deleteSession,
   } = useChat();
   const { theme } = useTheme();
+  const { user } = useAuth();
+  const userName = (user?.fullname || user?.name || '').trim();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [feedbackSendingById, setFeedbackSendingById] = useState({});
   const inputRef = useRef(null);
   const listRef = useRef(null);
   const bobAnim = useRef(new Animated.Value(0)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
+  const voiceReplyEnabledRef = useRef(false);
+  const {
+    listening,
+    voiceAvailable,
+    startListening,
+    stopListening,
+    speak,
+    stopSpeaking,
+  } = useVoiceAssistant({
+    onSpeechText: spokenText => {
+      voiceReplyEnabledRef.current = true;
+      setText(spokenText);
+    },
+  });
 
   useEffect(() => {
     if (!isOpen) setHistoryOpen(false);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) return;
+
+    stopSpeaking();
+    if (listening) stopListening();
+  }, [isOpen, listening, stopListening, stopSpeaking]);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -300,6 +343,20 @@ export default function FloatingChat() {
     inputRange: [0, 1],
     outputRange: [0.92, 1.04],
   });
+  const micUnavailable = voiceAvailable === false;
+  const micIconName = listening
+    ? 'mic'
+    : micUnavailable
+    ? 'mic-off-outline'
+    : 'mic-outline';
+  const micAccessibilityLabel = listening
+    ? 'Stop voice input'
+    : micUnavailable
+    ? 'Voice input unavailable'
+    : 'Start voice input';
+  const micAccessibilityHint = micUnavailable
+    ? 'Speech recognition is unavailable on this emulator or device'
+    : 'Uses speech recognition to fill the message box';
 
   async function handleSend() {
     const userText = text.trim();
@@ -307,17 +364,24 @@ export default function FloatingChat() {
 
     if (!userText || sending || !targetSessionId) return;
 
+    const shouldSpeakReply = voiceReplyEnabledRef.current;
+    voiceReplyEnabledRef.current = false;
     setText('');
     setSending(true);
 
     sendMessage(userText, 'user', { sessionId: targetSessionId });
 
     try {
+      const recentHistory = messages.slice(-8).map(item => ({
+        role: item.from === 'bot' ? 'assistant' : 'user',
+        content: item.text,
+      }));
       const result = await sendAIMessage(userText, {
         conversationId: activeSession?.conversationId,
         syncGlobalConversationId: false,
         enableMcpTools: true,
         ragContext: 'resident',
+        history: recentHistory,
       });
 
       if (result?.conversationId) {
@@ -330,8 +394,28 @@ export default function FloatingChat() {
         result?.assistantMessage?.content ||
         result?.assistantMessage?.text ||
         'AI response မရပါ။';
+      const nextConversationId =
+        result?.conversationId || activeSession?.conversationId || null;
 
-      sendMessage(assistantText, 'bot', { sessionId: targetSessionId });
+      sendMessage(assistantText, 'bot', {
+        sessionId: targetSessionId,
+        metadata: {
+          assistantMessageId: result?.assistantMessage?.id ?? null,
+          conversationId: nextConversationId,
+          feedbackRating: null,
+          knowledgeSources:
+            result?.knowledgeSources ||
+            result?.assistantMessage?.knowledgeSources ||
+            [],
+          toolCalls:
+            result?.toolCalls || result?.assistantMessage?.toolCalls || [],
+          intent: result?.intent || result?.assistantMessage?.intent || null,
+        },
+      });
+
+      if (shouldSpeakReply) {
+        speak(assistantText);
+      }
     } catch (err) {
       sendMessage(
         err.message || 'AI assistant ချိတ်ဆက်မရပါ။ Backend/Ollama ကိုစစ်ပါ။',
@@ -343,9 +427,72 @@ export default function FloatingChat() {
     }
   }
 
+  async function handleFeedback(item, rating) {
+    const messageId = item.assistantMessageId;
+    const conversationId = item.conversationId || activeSession?.conversationId;
+
+    if (
+      !messageId ||
+      !conversationId ||
+      feedbackSendingById[item.id] ||
+      item.feedbackRating === rating
+    ) {
+      return;
+    }
+
+    const previousRating = item.feedbackRating ?? null;
+
+    setFeedbackSendingById(previous => ({ ...previous, [item.id]: true }));
+    updateMessage(
+      item.id,
+      {
+        feedbackRating: rating,
+        feedbackError: null,
+      },
+      { sessionId: activeSessionId },
+    );
+
+    try {
+      await sendChatFeedback({
+        conversationId,
+        messageId,
+        rating,
+        helpful: rating > 0,
+      });
+    } catch (err) {
+      updateMessage(
+        item.id,
+        {
+          feedbackRating: previousRating,
+          feedbackError: err.message || 'Feedback မသိမ်းနိုင်သေးပါ။',
+        },
+        { sessionId: activeSessionId },
+      );
+    } finally {
+      setFeedbackSendingById(previous => {
+        const next = { ...previous };
+        delete next[item.id];
+        return next;
+      });
+    }
+  }
+
   function handleClose() {
     setHistoryOpen(false);
+    if (listening) stopListening();
+    stopSpeaking();
     close();
+  }
+
+  function handleMicPress() {
+    if (sending) return;
+
+    if (listening) {
+      stopListening();
+      return;
+    }
+
+    startListening();
   }
 
   function handleNewChat() {
@@ -385,11 +532,23 @@ export default function FloatingChat() {
                 <Ionicons name="menu" size={24} color={theme.subtext} />
               </TouchableOpacity>
 
-              <Text style={[styles.headerText, { color: theme.text }]}>
-                Assistant
-              </Text>
+              <View style={styles.headerTitleWrap}>
+                <Text style={[styles.headerText, { color: theme.text }]}>
+                  HomeMate 🏠
+                </Text>
+                {userName ? (
+                  <Text
+                    style={[styles.headerSubText, { color: theme.subtext }]}
+                  >
+                    မင်္ဂလာပါ, {userName.split(' ')[0]} 👋
+                  </Text>
+                ) : null}
+              </View>
 
-              <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+              <TouchableOpacity
+                onPress={handleClose}
+                style={styles.closeButton}
+              >
                 <Text style={{ color: theme.subtext }}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -415,33 +574,211 @@ export default function FloatingChat() {
               ListFooterComponent={
                 sending ? <ThinkingIndicator theme={theme} /> : null
               }
+              ListEmptyComponent={
+                !sending ? (
+                  <View style={styles.emptyState}>
+                    <View
+                      style={[
+                        styles.emptyIconWrap,
+                        { backgroundColor: theme.primaryBg },
+                      ]}
+                    >
+                      <Ionicons name="home" size={28} color={theme.primary} />
+                    </View>
+                    <Text style={[styles.emptyGreeting, { color: theme.text }]}>
+                      {userName
+                        ? `မင်္ဂလာပါ ${
+                            userName.split(' ')[0]
+                          } 👋\nကျွန်တော်က HomeMate ပါ!`
+                        : 'မင်္ဂလာပါ 👋\nကျွန်တော်က HomeMate ပါ!'}
+                    </Text>
+                    <Text style={[styles.emptyHint, { color: theme.subtext }]}>
+                      Bills • Maintenance • Helpers • Visitors • Parking • SOS •
+                      RFID Card
+                    </Text>
+                    <View style={styles.quickChips}>
+                      {[
+                        'သင့် bill ဘယ်လောက်ကျန်လဲ?',
+                        'ပါကင် slot ဘယ်လောက်ကျန်လဲ?',
+                        'သင့် အခန်းမှာ ဘာသတင်းရှိသလဲ?',
+                        'ဧည့်သည် မှတ်ပုံတင်ချင်သည်',
+                        'Helper request တင်ချင်သည်',
+                        'ကဒ်ပျောက်သွားသည်',
+                        'အရေးပေါ် အကူအညီလိုသည်',
+                        'Bills များကို ငွေပေးချေချင်သည်',
+                      ].map(chip => (
+                        <TouchableOpacity
+                          key={chip}
+                          onPress={() => setText(chip)}
+                          style={[
+                            styles.quickChip,
+                            {
+                              backgroundColor: theme.primaryBg,
+                              borderColor: theme.primary,
+                            },
+                          ]}
+                          activeOpacity={0.8}
+                        >
+                          <Text
+                            style={[
+                              styles.quickChipText,
+                              { color: theme.primary },
+                            ]}
+                          >
+                            {chip}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                ) : null
+              }
               onContentSizeChange={() => {
                 listRef.current?.scrollToEnd({ animated: true });
               }}
-              renderItem={({ item }) => (
-                <View
-                  style={[
-                    styles.messageRow,
-                    item.from === 'user' ? styles.userMsg : styles.botMsg,
-                  ]}
-                >
-                  <Text
-                    style={{
-                      color: item.from === 'user' ? '#fff' : theme.text,
-                    }}
+              renderItem={({ item }) => {
+                const isUser = item.from === 'user';
+                const canSendFeedback =
+                  !isUser && item.assistantMessageId && item.conversationId;
+                const feedbackBusy = Boolean(feedbackSendingById[item.id]);
+                const sourceTitles = Array.isArray(item.knowledgeSources)
+                  ? item.knowledgeSources
+                      .map(source => source?.title)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                  : [];
+
+                return (
+                  <View
+                    style={[
+                      styles.messageRow,
+                      isUser ? styles.userMsg : styles.botMsg,
+                    ]}
                   >
-                    {item.text}
-                  </Text>
-                </View>
-              )}
+                    <Text
+                      style={{
+                        color: isUser ? '#fff' : theme.text,
+                      }}
+                    >
+                      {item.text}
+                    </Text>
+
+                    {!isUser && sourceTitles.length > 0 && (
+                      <Text
+                        style={[styles.messageMeta, { color: theme.subtext }]}
+                      >
+                        Knowledge: {sourceTitles.join(', ')}
+                      </Text>
+                    )}
+
+                    {!isUser && item.toolCalls?.length > 0 && (
+                      <Text
+                        style={[styles.messageMeta, { color: theme.subtext }]}
+                      >
+                        Tools: {item.toolCalls.length}
+                      </Text>
+                    )}
+
+                    {canSendFeedback && (
+                      <View style={styles.feedbackRow}>
+                        <TouchableOpacity
+                          onPress={() => handleFeedback(item, 1)}
+                          disabled={feedbackBusy}
+                          accessibilityLabel="Mark answer helpful"
+                          style={[
+                            styles.feedbackButton,
+                            {
+                              backgroundColor:
+                                item.feedbackRating === 1
+                                  ? theme.primaryBg
+                                  : theme.input,
+                              borderColor:
+                                item.feedbackRating === 1
+                                  ? theme.primary
+                                  : theme.border,
+                            },
+                            feedbackBusy && styles.feedbackButtonDisabled,
+                          ]}
+                        >
+                          <Ionicons
+                            name={
+                              item.feedbackRating === 1
+                                ? 'thumbs-up'
+                                : 'thumbs-up-outline'
+                            }
+                            size={15}
+                            color={
+                              item.feedbackRating === 1
+                                ? theme.primary
+                                : theme.subtext
+                            }
+                          />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          onPress={() => handleFeedback(item, -1)}
+                          disabled={feedbackBusy}
+                          accessibilityLabel="Mark answer not helpful"
+                          style={[
+                            styles.feedbackButton,
+                            {
+                              backgroundColor:
+                                item.feedbackRating === -1
+                                  ? theme.dangerBg
+                                  : theme.input,
+                              borderColor:
+                                item.feedbackRating === -1
+                                  ? theme.danger
+                                  : theme.border,
+                            },
+                            feedbackBusy && styles.feedbackButtonDisabled,
+                          ]}
+                        >
+                          <Ionicons
+                            name={
+                              item.feedbackRating === -1
+                                ? 'thumbs-down'
+                                : 'thumbs-down-outline'
+                            }
+                            size={15}
+                            color={
+                              item.feedbackRating === -1
+                                ? theme.danger
+                                : theme.subtext
+                            }
+                          />
+                        </TouchableOpacity>
+
+                        {feedbackBusy && (
+                          <ActivityIndicator
+                            size="small"
+                            color={theme.primary}
+                          />
+                        )}
+                      </View>
+                    )}
+
+                    {!isUser && item.feedbackError && (
+                      <Text
+                        style={[styles.messageMeta, { color: theme.danger }]}
+                      >
+                        {item.feedbackError}
+                      </Text>
+                    )}
+                  </View>
+                );
+              }}
             />
 
             <View style={styles.inputRow}>
               <TextInput
                 ref={inputRef}
                 value={text}
-                onChangeText={setText}
-                placeholder="Type a message"
+                onChangeText={nextText => {
+                  voiceReplyEnabledRef.current = false;
+                  setText(nextText);
+                }}
+                placeholder={listening ? 'Listening...' : 'Type a message'}
                 placeholderTextColor={theme.subtext}
                 style={[
                   styles.input,
@@ -457,6 +794,26 @@ export default function FloatingChat() {
               />
 
               <TouchableOpacity
+                onPress={handleMicPress}
+                disabled={sending}
+                accessibilityLabel={micAccessibilityLabel}
+                accessibilityHint={micAccessibilityHint}
+                style={[
+                  styles.micButton,
+                  {
+                    backgroundColor: listening ? theme.primary : theme.border,
+                    opacity: sending || micUnavailable ? 0.65 : 1,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={micIconName}
+                  size={19}
+                  color={listening ? theme.primaryText : theme.text}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 onPress={handleSend}
                 disabled={sending || !text.trim()}
                 style={[
@@ -470,7 +827,7 @@ export default function FloatingChat() {
                 {sending ? (
                   <ActivityIndicator size="small" color={theme.primaryText} />
                 ) : (
-                  <Text style={{ color: theme.primaryText }}>Send</Text>
+                  <Ionicons name="send" size={18} color={theme.primaryText} />
                 )}
               </TouchableOpacity>
             </View>
@@ -710,6 +1067,28 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     backgroundColor: 'transparent',
   },
+  messageMeta: {
+    marginTop: 6,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  feedbackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  feedbackButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feedbackButtonDisabled: {
+    opacity: 0.65,
+  },
   inputRow: {
     flexDirection: 'row',
     padding: 12,
@@ -726,14 +1105,74 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     includeFontPadding: true,
   },
-  sendButton: {
+  micButton: {
     marginLeft: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    minWidth: 58,
-    minHeight: 44,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  sendButton: {
+    marginLeft: 8,
+    width: 52,
+    height: 44,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitleWrap: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  headerSubText: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 1,
+    opacity: 0.85,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 16,
+  },
+  emptyIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyGreeting: {
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 28,
+    marginBottom: 8,
+  },
+  emptyHint: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  quickChips: {
+    width: '100%',
+    gap: 8,
+  },
+  quickChip: {
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  quickChipText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

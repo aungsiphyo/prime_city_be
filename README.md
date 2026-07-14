@@ -56,13 +56,15 @@ This project aims to provide a compact, deployable smart-residential system with
 - Resident and admin announcements, advertisements, and service bills
 - SOS alerts and real-time notifications via Socket.IO and MQTT
 - Helper/maintenance request flow and reporting
-- Optional AI integration hooks (OLLAMA configuration variables present) for assistant features
+- AI assistant chatbox powered by local Ollama, RAG knowledge lookup, app tools, chat history, and feedback capture
+- Safe AI improvement export pipeline for prompt/RAG/tool review and future LoRA/QLoRA fine-tuning datasets
 
 Components
 
 - Backend: Express + Mongoose (MongoDB). Authentication via JWT. Realtime via Socket.IO. MQTT client included for device messaging.
 - Mobile: React Native app (Android/iOS) that hits backend REST APIs and subscribes to realtime notifications.
 - Device: ESP32-CAM sketch (`Node_Backend/esp32_cam_qr_scanner.ino`) scans QR codes and communicates with the backend / MQTT broker.
+- AI: Local Ollama model (for example `gemma4:12b`) is called through `Node_Backend/src/services/ai.service.js`. The assistant uses intent routing, RAG knowledge retrieval, safe tool calls, chat persistence, and user feedback.
 
 Architecture (high level)
 
@@ -74,20 +76,45 @@ Resident Mobile <--> REST API (Express) <--> MongoDB
 
 ## Features (summary)
 
-- Authentication (login/register) and role-based access
-- Visitor QR creation and validation
-- MQTT-based IoT communication and device control
-- Realtime notifications for SOS and other events
-- CRUD for rooms, service bills, announcements, advertisements, helpers
-- Admin routes for management
+**Core & Resident Features:**
+- **Authentication:** Login/register with role-based access control (Admin, Resident, Guard).
+- **Dashboard:** Personalized home screen showing recent announcements, active bills, and quick actions.
+- **Visitor Management:** QR code creation for visitors and validation by guards.
+- **Parking System:** Track parking availability and visitor parking events.
+- **Service Bills:** View and manage monthly service/maintenance bills for rooms.
+- **Helper Requests:** Request maintenance or helper services and track their status.
+- **Issue Reporting:** Residents can report issues (e.g., maintenance, security) to the management.
+- **Announcements & Ads:** Broadcast announcements and display advertisements to residents.
+- **Realtime Notifications:** Push notifications and socket-based realtime updates for important events.
+- **SOS Alerts:** One-tap emergency SOS alerts with real-time broadcasting to guards and admins.
 
-## API endpoints (examples)
+**IoT & Access Control:**
+- **QR Scanner:** ESP32-CAM integration for scanning visitor QR codes.
+- **RFID Integration:** RFID-based access control with scanning logs for entry/exit tracking.
+- **MQTT Communication:** Device control and messaging via MQTT broker.
+
+**AI Assistant (Resident Chatbot):**
+- **Context-Aware AI:** Answers questions about bills, parking, visitors, policies, and room data.
+- **Personalized Responses:** AI uses the authenticated user's current database record for tailored answers.
+- **RAG Knowledge Base:** Admin-manageable knowledge base (CRUD) for the AI to query condo policies.
+- **Isolated Sessions:** User-isolated chat history and data queries.
+- **Feedback Loop:** Collect thumbs up/down ratings on AI answers for quality tracking.
+- **Data Export Pipeline:** Export AI chat history with PII redaction for safe LoRA/QLoRA fine-tuning and prompt review.
+
+**Admin & Management:**
+- **Room Management:** CRUD operations for rooms and assigning residents.
+- **User Management:** Manage residents, guards, and their roles.
+- **Admin Dashboard:** Overview of system status, active SOS, and recent reports.
 
 - `POST /api/auth/login` — authenticate user
 - `POST /api/visitor` — register a visitor
 - `GET /api/parking` — parking status
 - `POST /api/sos` — send SOS alert
 - `GET /api/notifications` — list notifications
+- `POST /api/ai/chat` — ask the authenticated, user-aware AI assistant
+- `GET /api/ai/history` — load authenticated user's AI chat history
+- `POST /api/ai/feedback` — save thumbs up/down feedback for an assistant answer
+- `GET /api/knowledge` / `POST /api/knowledge` — manage RAG knowledge base content
 
 (See `Node_Backend/src/routes/` for full route list such as `auth.js`, `visitor.js`, `parking.js`, `sos.js`, `notification.js`, `announcement.js`, `advertisementRoutes.js`, etc.)
 
@@ -101,7 +128,14 @@ The backend reads configuration from `Node_Backend/.env`. Do NOT commit secrets 
 - `EMAIL_USER` / `EMAIL_PASS` — SMTP credentials for sending email
 - `MQTT_URL`, `MQTT_USER`, `MQTT_PASS` — MQTT broker details
 - `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_MS` — (optional) AI integration
-- `AI_SYSTEM_PROMPT` — (optional) system prompt for AI
+- `OLLAMA_NUM_CTX`, `OLLAMA_NUM_PREDICT`, `OLLAMA_TEMPERATURE` — (optional) AI speed/quality tuning
+- `OLLAMA_THINK` — (optional) set `true` only if you want thinking-mode output; default is off for faster chat replies
+- `AI_HISTORY_LIMIT`, `AI_RAG_MAX_DOCS`, `AI_RAG_MAX_CHARS` — (optional) prompt-size tuning
+- `AI_ENABLE_TOOLS` — (optional) set `true` to pass tool schemas to Ollama for supported tool-capable models
+- `AI_REQUIRE_AUTH` — (optional) set `true` in production to require JWT for `/api/ai/chat`
+- `AI_RATE_LIMIT_ENABLED`, `AI_RATE_LIMIT_MAX`, `AI_RATE_LIMIT_WINDOW_MS` — (optional) AI chat rate-limit controls
+- `AI_SYSTEM_PROMPT`, `AI_RESPONSE_STYLE_PROMPT` — (optional) system prompts for AI
+- `RFID_DEVICE_SECRET` — (optional) require ESP32 RFID readers to send this value as `x-device-secret` or `deviceSecret`
 
 Create a `.env.example` (without values) and add it to the repo to document variables.
 
@@ -134,6 +168,44 @@ docker compose logs -f
 docker compose down
 ```
 
+## AI assistant improvement workflow
+
+The mobile app includes a floating assistant chat. Authenticated users can ask questions, and assistant answers can be rated with thumbs up/down. Feedback is stored in MongoDB and can later be exported into safe JSONL files for review and future model improvement.
+
+Key runtime flow:
+
+1. User asks a question in `Smart_city_Mobile/src/components/FloatingChat.jsx`.
+2. Mobile sends `POST /api/ai/chat`.
+3. Backend classifies intent, retrieves RAG knowledge, runs safe app tools when needed, and calls Ollama.
+4. Backend stores the user/assistant turn in `AiChat`.
+5. User taps thumbs up/down.
+6. Mobile sends `POST /api/ai/feedback`.
+7. Backend stores the rating in `AiFeedback`.
+
+Export feedback-backed datasets:
+
+```bash
+cd Node_Backend
+npm run export:ai-dataset -- --limit 1000 --history-limit 8
+```
+
+Optional filters:
+
+```bash
+npm run export:ai-dataset -- --since 2026-06-01 --limit 5000
+npm run export:ai-dataset -- --out ./exports/custom-ai-training
+```
+
+Export outputs are written under `Node_Backend/exports/ai-training/` by default:
+
+- `ai-sft-*.jsonl` — positive-feedback conversations suitable for supervised fine-tuning review
+- `ai-review-*.jsonl` — negative-feedback conversations for human rewrite, prompt fixes, RAG fixes, or tool-routing fixes
+- `ai-summary-*.json` — aggregate quality signals by intent, tool usage, and RAG usage
+
+The export script redacts sensitive values such as email addresses, phone numbers, resident/system IDs, UUIDs, Mongo ObjectIds, and tokens. Exported files are ignored by git through `Node_Backend/exports/`.
+
+Important: Ollama does not automatically learn from the database. This workflow creates safe datasets that can be used to improve prompts, RAG knowledge, tool routing, and later LoRA/QLoRA fine-tuning workflows.
+
 ## Security & secrets
 
 - Never commit `Node_Backend/.env` to source control. Add it to `.gitignore`.
@@ -143,14 +215,23 @@ docker compose down
 
 - Backend routes: `Node_Backend/src/routes/`
 - Models: `Node_Backend/src/models/`
+- AI assistant service: `Node_Backend/src/services/ai.service.js`
+- AI intent routing: `Node_Backend/src/services/intent.service.js`
+- AI RAG retrieval: `Node_Backend/src/services/rag.service.js`
+- AI tool implementations: `Node_Backend/src/services/aiTools.service.js`
+- AI feedback model: `Node_Backend/src/models/AiFeedback.js`
+- AI dataset export: `Node_Backend/scripts/export-ai-finetune-dataset.js`
 - MQTT service: `Node_Backend/src/services/mqtt.js`
 - ESP32 QR scanner sketch: `Node_Backend/esp32_cam_qr_scanner.ino`
 - Mobile app entry: `Smart_city_Mobile/App.jsx` and `Smart_city_Mobile/src/`
+- Mobile AI chat UI: `Smart_city_Mobile/src/components/FloatingChat.jsx`
 
 ## Troubleshooting
 
 - If Docker containers fail to start, check `docker compose logs -f` and the backend logs for environment/DB errors.
 - If MQTT connection fails, confirm broker URL and credentials and network access.
+- If AI replies fail, confirm Ollama is running, `OLLAMA_BASE_URL` is reachable, and `OLLAMA_MODEL` is installed locally.
+- If `npm run export:ai-dataset` returns `0 SFT, 0 review`, collect thumbs up/down feedback in the mobile chat first.
 
 ## Contributing
 
@@ -158,7 +239,8 @@ See the CONTRIBUTING.md if present; otherwise use the standard fork → branch �
 
 ## License
 
-Add your project license (e.g., MIT) here.
+TTU (CEIT Department)
+Smart Innovators
 
 ---
 

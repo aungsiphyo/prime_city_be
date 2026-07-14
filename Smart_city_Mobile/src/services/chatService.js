@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config/api';
+import { apiRequest } from '../api/client';
 
 let conversationId = null;
 const FALLBACK_ERROR_MESSAGE =
@@ -35,25 +36,18 @@ export async function sendMessage(text, options = {}) {
     throw new Error('Message cannot be empty');
   }
 
-  const res = await fetch(`${API_BASE_URL}/ai/chat`, {
+  const data = await apiRequest('/ai/chat', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+    auth: true,
+    body: {
       conversationId: options.conversationId ?? conversationId,
       message: trimmed,
       history: options.history ?? [],
       enableMcpTools: options.enableMcpTools ?? true,
+      enableRag: options.enableRag ?? true,
       ragContext: options.ragContext ?? 'resident',
-    }),
+    },
   });
-
-  const data = await res.json();
-
-  if (!res.ok || data.success === false) {
-    throw new Error(data.message || 'AI request failed');
-  }
 
   if (data.meta?.usedFallback) {
     throw new Error(FALLBACK_ERROR_MESSAGE);
@@ -67,12 +61,20 @@ export async function sendMessage(text, options = {}) {
   const assistantMessage = normalizeAssistantMessage(data);
   const nextConversationId =
     data.conversationId ?? options.conversationId ?? conversationId;
+  const knowledgeSources =
+    data.knowledgeSources ??
+    data.meta?.knowledgeSources ??
+    assistantMessage.knowledgeSources ??
+    [];
+  const intent = data.meta?.intent ?? assistantMessage.intent ?? null;
 
   return {
     userMessage,
     assistantMessage,
     conversationId: nextConversationId,
     toolCalls: data.toolCalls ?? assistantMessage.toolCalls ?? [],
+    knowledgeSources,
+    intent,
   };
 }
 
@@ -81,7 +83,48 @@ export async function receiveMessage() {
 }
 
 export async function loadChatHistory() {
-  return [];
+  try {
+    const data = await apiRequest('/ai/history', {
+      method: 'GET',
+      auth: true,
+    });
+
+    return Array.isArray(data.messages) ? data.messages : [];
+  } catch (err) {
+    if (err.status === 401) return [];
+
+    throw err;
+  }
+}
+
+export async function sendFeedback({
+  conversationId: feedbackConversationId,
+  messageId,
+  rating,
+  helpful,
+  resolved,
+  comment,
+  appVersion,
+}) {
+  if (!feedbackConversationId || !messageId) {
+    throw new Error('Feedback target is missing');
+  }
+
+  const data = await apiRequest('/ai/feedback', {
+    method: 'POST',
+    auth: true,
+    body: {
+      conversationId: feedbackConversationId,
+      messageId,
+      rating,
+      helpful: helpful ?? rating > 0,
+      resolved,
+      comment,
+      appVersion,
+    },
+  });
+
+  return data.feedback;
 }
 
 export async function invokeMcpTool(toolName, args = {}) {

@@ -4,7 +4,20 @@ const NotificationSchema = new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   title: { type: String, required: true },
   message: { type: String, required: true },
-  type: { type: String, enum: ["Report", "Visitor", "General"], required: true },
+  type: {
+    type: String,
+    enum: [
+      "Report",
+      "Visitor",
+      "General",
+      "SOS",
+      "Announcement",
+      "Helper",
+      "Emergency",
+    ],
+    required: true,
+  },
+  data: { type: mongoose.Schema.Types.Mixed, default: {} },
   is_read: { type: Boolean, default: false },
   created_at: { type: Date, default: Date.now },
 });

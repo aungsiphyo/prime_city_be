@@ -17,7 +17,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { loginStep1, loginStep2 } from '../../api/auth';
 
-export default function LoginScreen() {
+export default function LoginScreen({ navigation }) {
   const { theme } = useTheme();
   const { signIn } = useAuth();
   const insets = useSafeAreaInsets();
@@ -58,8 +58,11 @@ export default function LoginScreen() {
       signIn({
         id: res.user.id,
         fullname: res.user.fullname,
-        email: email.trim(),
+        email: res.user.email || email.trim(),
+        phone: res.user.phone,
         role: res.user.role,
+        room_id: res.user.room_id,
+        room_number: res.user.room_number,
       });
     } catch (err) {
       Alert.alert('Verification failed', err.message || 'Invalid or expired OTP.');
@@ -119,6 +122,13 @@ export default function LoginScreen() {
                   />
                 </TouchableOpacity>
               </View>
+
+              <TouchableOpacity
+                style={styles.forgotPasswordContainer}
+                onPress={() => navigation.navigate('ForgotPassword')}
+                activeOpacity={0.7}>
+                <Text style={[styles.forgotPasswordText, { color: theme.primary }]}>Forgot Password?</Text>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.button, { backgroundColor: theme.primary }]}
@@ -219,4 +229,13 @@ const styles = StyleSheet.create({
   buttonText: { fontSize: 16, fontWeight: '700' },
   backLink: { alignItems: 'center', marginTop: 16 },
   backLinkText: { fontSize: 14, fontWeight: '600' },
+  forgotPasswordContainer: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });

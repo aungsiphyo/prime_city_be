@@ -1,1 +1,16 @@
 .DS_Store
+
+.env
+Node_Backend/.env
+
+node_modules/
+**/node_modules/
+
+Smart_city_Mobile/android/app/build/
+Smart_city_Mobile/android/build/
+Smart_city_Mobile/android/.gradle/
+Smart_city_Mobile/android/.cxx/
+
+*.log
+
+Node_Backend/exports/

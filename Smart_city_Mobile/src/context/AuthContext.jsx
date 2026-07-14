@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { getAccessToken, clearTokens, setOnSessionExpired } from '../api/client';
 import { logout as apiLogout } from '../api/auth';
+import { fetchProfile } from '../api/profile';
 
 const AuthContext = createContext(null);
 
@@ -15,9 +16,16 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     getAccessToken()
-      .then((token) => {
+      .then(async (token) => {
         if (token) {
-          setUser((current) => current || { id: 'session' });
+          try {
+            const profile = await fetchProfile();
+            setUser(profile);
+          } catch (err) {
+            if (!err.sessionExpired) {
+              setUser((current) => current || { id: 'session' });
+            }
+          }
         }
       })
       .finally(() => setIsLoading(false));

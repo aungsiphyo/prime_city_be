@@ -1,6 +1,47 @@
 const express = require("express");
 const router = express.Router();
+const mongoose = require("mongoose");
 const SosAlert = require("../models/SosAlert");
+const User = require("../models/User");
+const Room = require("../models/Room");
+const Notification = require("../models/Notification");
+const optionalAuth = require("../middleware/optionalAuthMiddleware");
+const { sendPushToUser, sendPushToUsers } = require("../services/push.service");
+
+function getUserId(req) {
+  return req.user?.id || req.user?._id;
+}
+
+function emitNotificationToUser(app, userId, notification) {
+  const io = app.get("io");
+  const users = app.get("onlineUsers") || {};
+  const socketId = users[String(userId)];
+
+  if (io && socketId) {
+    io.to(socketId).emit("notification", notification);
+  }
+}
+
+async function notifyUsers(app, userIds, payload, options = {}) {
+  const ids = [...new Set(userIds.filter(Boolean).map(String))];
+  if (!ids.length) return;
+
+  const notifications = await Notification.insertMany(
+    ids.map((userId) => ({
+      user_id: userId,
+      title: payload.title,
+      message: payload.message,
+      type: payload.type,
+      data: payload.data || {},
+    })),
+  );
+
+  notifications.forEach((notification) => {
+    emitNotificationToUser(app, notification.user_id, notification);
+  });
+
+  await sendPushToUsers(ids, payload, options);
+}
 
 // =========================
 // GET /api/sos
@@ -106,21 +147,36 @@ router.get("/:id", async (req, res) => {
 //   "priority": "High"
 // }
 // =========================
-router.post("/", async (req, res) => {
+router.post("/", optionalAuth, async (req, res) => {
   try {
-    const {
-      resident_id,
-      room_id,
-      message,
-      alert_type = "General",
-      priority = "High",
-    } = req.body;
+    let { resident_id, room_id, message, alert_type = "General" } = req.body;
+    const { priority = "High" } = req.body;
+    const currentUserId = getUserId(req);
+
+    if (currentUserId && (!resident_id || !room_id)) {
+      const currentUser = await User.findById(currentUserId)
+        .select("_id room_id")
+        .lean();
+      resident_id = resident_id || currentUser?._id;
+      room_id = room_id || currentUser?.room_id;
+    }
 
     if (!resident_id || !room_id || !message) {
       return res.status(400).json({
         success: false,
         message: "resident_id, room_id and message are required",
       });
+    }
+
+    // Resolve room reference when a non-ObjectId (e.g., room name like "A222") is provided
+    if (room_id && !mongoose.Types.ObjectId.isValid(String(room_id))) {
+      const lookup = String(room_id || "").trim();
+      const linkedRoom = await Room.findOne({
+        $or: [{ room_name: lookup }, { room_id: lookup }],
+      });
+      if (linkedRoom) {
+        room_id = String(linkedRoom._id);
+      }
     }
 
     const sos = await SosAlert.create({
@@ -144,6 +200,55 @@ router.post("/", async (req, res) => {
       io.emit("sos_alert_created", populatedSos);
       io.emit("admin_sos_alert", populatedSos);
     }
+
+    const responderUsers = await User.find({
+      role: { $in: ["Admin", "Staff", "Security"] },
+    })
+      .select("_id")
+      .lean();
+
+    await notifyUsers(
+      req.app,
+      responderUsers.map((user) => user._id),
+      {
+        title: `SOS Alert: ${alert_type}`,
+        message,
+        type: "SOS",
+        data: {
+          sos_id: String(populatedSos._id),
+          alert_type,
+          priority,
+          room_id: String(room_id),
+          resident_id: String(resident_id),
+        },
+      },
+      { channelId: "urgent_alerts", priority: "high", androidPriority: "high" },
+    );
+
+    const residentNotification = await Notification.create({
+      user_id: resident_id,
+      title: "SOS alert sent",
+      message: "Security has been notified. Help is on the way.",
+      type: "SOS",
+      data: {
+        sos_id: String(populatedSos._id),
+        alert_type,
+        priority,
+      },
+    });
+
+    emitNotificationToUser(req.app, resident_id, residentNotification);
+    await sendPushToUser(
+      resident_id,
+      {
+        title: residentNotification.title,
+        message: residentNotification.message,
+        type: residentNotification.type,
+        notification_id: String(residentNotification._id),
+        data: residentNotification.data,
+      },
+      { channelId: "urgent_alerts", priority: "high", androidPriority: "high" },
+    );
 
     res.status(201).json({
       success: true,
@@ -194,6 +299,22 @@ router.post("/emergency", async (req, res) => {
     };
 
     io.emit("emergency_sos", emergencyData);
+
+    const users = await User.find().select("_id").lean();
+    await notifyUsers(
+      req.app,
+      users.map((user) => user._id),
+      {
+        title,
+        message,
+        type: "Emergency",
+        data: {
+          level,
+          created_at: emergencyData.created_at.toISOString(),
+        },
+      },
+      { channelId: "urgent_alerts", priority: "high", androidPriority: "high" },
+    );
 
     res.json({
       success: true,

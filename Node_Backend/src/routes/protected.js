@@ -4,6 +4,7 @@ const router = express.Router();
 const protect = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
 const User = require("../models/User");
+const { resolveCurrentRoom } = require("../services/aiTools.service");
 
 router.get("/profile", protect, async (req, res) => {
   try {
@@ -15,15 +16,20 @@ router.get("/profile", protect, async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    const resolvedRoom = await resolveCurrentRoom(user);
+
     res.json({
       message: "Profile access granted",
       user: {
         id: user._id,
+        resident_uid: user.resident_uid || null,
+        rfid_uid: user.rfid_uid || null,
         fullname: user.fullname,
         email: user.email,
         phone: user.phone,
         role: user.role,
         room_id: user.room_id || null,
+        room_number: resolvedRoom.room?.room_name || null,
         created_at: user.created_at,
       },
     });

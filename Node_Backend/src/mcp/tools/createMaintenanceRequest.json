@@ -5,8 +5,9 @@
     "type": "object",
     "properties": {
       "title": { "type": "string" },
-      "description": { "type": "string" }
+      "description": { "type": "string" },
+      "hasUsefulDetail": { "type": "boolean" }
     },
-    "required": ["title"]
+    "required": ["title", "description"]
   }
 }

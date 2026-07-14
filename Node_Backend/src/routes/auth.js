@@ -1,10 +1,52 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
+const mongoose = require("mongoose");
 const User = require("../models/User");
+const Room = require("../models/Room");
+const Visitor = require("../models/Visitor");
 const sendEmail = require("../utils/sendEmail");
+const { resolveCurrentRoom } = require("../services/aiTools.service");
 
 const router = express.Router();
+
+function isObjectId(value) {
+  return mongoose.Types.ObjectId.isValid(String(value || ""));
+}
+
+function normalizeRfidUid(value) {
+  return String(value || "")
+    .replace(/[^a-fA-F0-9]/g, "")
+    .toUpperCase();
+}
+
+async function findRoomByRef(roomRef) {
+  const normalizedRoomRef = String(roomRef || "").trim();
+
+  if (!normalizedRoomRef) return null;
+
+  const query = isObjectId(normalizedRoomRef)
+    ? { $or: [{ _id: normalizedRoomRef }, { room_name: normalizedRoomRef }] }
+    : { room_name: normalizedRoomRef };
+
+  return Room.findOne(query);
+}
+
+async function syncUserRoom(user, room) {
+  if (!room) return user;
+
+  room.resident_id = user._id;
+  room.owner_name = user.fullname;
+  room.status = "Occupied";
+  await room.save();
+
+  if (String(user.room_id) !== String(room._id)) {
+    user.room_id = String(room._id);
+    await user.save();
+  }
+
+  return user;
+}
 
 const generateTokens = (user) => {
   const accessToken = jwt.sign(
@@ -23,11 +65,35 @@ const generateTokens = (user) => {
 // ================= SIGNUP =================
 router.post("/signup", async (req, res) => {
   try {
-    const { fullname, email, phone, password, role, room_id } = req.body;
+    const { fullname, email, phone, password, role, room_id, rfid_uid } =
+      req.body;
+    const linkedRoom = room_id ? await findRoomByRef(room_id) : null;
+    const normalizedRfidUid = normalizeRfidUid(rfid_uid);
+
+    if (room_id && !linkedRoom) {
+      return res.status(400).json({ message: "Room not found for room_id" });
+    }
+
+    if (linkedRoom?.resident_id) {
+      return res.status(400).json({ message: "Room already has a resident" });
+    }
 
     const userExists = await User.findOne({ $or: [{ email }, { phone }] });
     if (userExists) {
       return res.status(400).json({ message: "User already exists" });
+    }
+
+    if (normalizedRfidUid) {
+      const [userCardExists, visitorCardExists] = await Promise.all([
+        User.exists({ rfid_uid: normalizedRfidUid }),
+        Visitor.exists({ rfid_uid: normalizedRfidUid }),
+      ]);
+
+      if (userCardExists || visitorCardExists) {
+        return res.status(400).json({
+          message: "RFID card is already assigned",
+        });
+      }
     }
 
     const newUser = new User({
@@ -36,13 +102,22 @@ router.post("/signup", async (req, res) => {
       phone,
       password,
       role,
-      room_id,
+      room_id: linkedRoom ? String(linkedRoom._id) : room_id,
+      rfid_uid: normalizedRfidUid || undefined,
     });
     await newUser.save();
+    await syncUserRoom(newUser, linkedRoom);
 
-    res.status(201).json({ message: "Register success" });
+    res.status(201).json({
+      message: "Register success",
+      user: {
+        id: newUser._id,
+        resident_uid: newUser.resident_uid,
+        rfid_uid: newUser.rfid_uid || null,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -116,14 +191,21 @@ router.post("/login/step2", async (req, res) => {
     user.otpExpires = undefined;
 
     await user.save();
+    const resolvedRoom = await resolveCurrentRoom(user);
 
     res.status(200).json({
       accessToken,
       refreshToken,
       user: {
         id: user._id,
+        resident_uid: user.resident_uid,
+        rfid_uid: user.rfid_uid || null,
         fullname: user.fullname,
+        email: user.email,
+        phone: user.phone,
         role: user.role,
+        room_id: user.room_id || null,
+        room_number: resolvedRoom.room?.room_name || null,
       },
     });
   } catch (err) {
@@ -175,8 +257,7 @@ router.post("/forgot-password/step2", async (req, res) => {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
+    user.password = newPassword;
     user.otp = undefined;
     user.otpExpires = undefined;
 

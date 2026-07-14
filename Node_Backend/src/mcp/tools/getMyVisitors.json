@@ -1,0 +1,13 @@
+{
+  "name": "getMyVisitors",
+  "description": "Get recent visitors for the current logged-in resident's linked room",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "today": {
+        "type": "boolean",
+        "description": "Only return visitors registered today"
+      }
+    }
+  }
+}

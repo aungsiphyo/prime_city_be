@@ -1,7 +1,30 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const { generateResidentUid } = require("../utils/generateUid");
+
+function normalizeRfidUid(value) {
+  const normalized = String(value || "")
+    .replace(/[^a-fA-F0-9]/g, "")
+    .toUpperCase();
+
+  return normalized || undefined;
+}
 
 const UserSchema = new mongoose.Schema({
+  resident_uid: {
+    type: String,
+    default: generateResidentUid,
+    unique: true,
+    sparse: true,
+    immutable: true,
+  },
+  rfid_uid: {
+    type: String,
+    unique: true,
+    sparse: true,
+    index: true,
+    set: normalizeRfidUid,
+  },
   fullname: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   phone: { type: String, required: true },
