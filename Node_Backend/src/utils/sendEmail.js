@@ -1,59 +1,34 @@
-// const nodemailer = require("nodemailer");
-
-// const sendEmail = async (to, otp) => {
-//   const transporter = nodemailer.createTransport({
-//     host: "142.250.191.109", // IPv4 for smtp.gmail.com
-//     port: 587,
-//     secure: false, // true for 465, false for other ports
-//     auth: {
-//       user: process.env.EMAIL_USER,
-//       pass: process.env.EMAIL_PASS,
-//     },
-//     tls: {
-//       rejectUnauthorized: false
-//     }
-//   });
-
-//   const mailOptions = {
-//     from: `"Smart City Support" <${process.env.EMAIL_USER}>`,
-//     to: to,
-//     subject: "Your Smart City OTP Code",
-//     html: `
-//       <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd;">
-//         <h2 style="color: #333;">Smart City Verification</h2>
-//         <p>Hello,</p>
-//         <p>Your OTP code is: <strong style="font-size: 24px; color: #007bff;">${otp}</strong></p>
-//         <p>This code will expire in 5 minutes.</p>
-//         <br />
-//         <p>Best Regards,<br/>Smart City Team</p>
-//       </div>
-//     `,
-//   };
-
-//   await transporter.sendMail(mailOptions);
-// };
-
-// module.exports = sendEmail;
-
-const { Resend } = require("resend");
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-const sendEmail = async (to, otp) => {
-  await resend.emails.send({
-    from: "Smart City Support <aungsiphyoit@gmail.com>", // Resend မှာ domain verify လုပ်ရမယ် (or သူတို့ default sandbox domain သုံးလို့ရ)
-    to,
-    subject: "Your Smart City OTP Code",
-    html: `
-      <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd;">
-        <h2 style="color: #333;">Smart City Verification</h2>
-        <p>Hello,</p>
-        <p>Your OTP code is: <strong style="font-size: 24px; color: #007bff;">${otp}</strong></p>
-        <p>This code will expire in 5 minutes.</p>
-        <br />
-        <p>Best Regards,<br/>Smart City Team</p>
-      </div>
-    `,
+const sendEmail = async (toEmail, otp) => {
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key': process.env.BREVO_API_KEY
+    },
+    body: JSON.stringify({
+      sender: { name: 'Smart City Support', email: 'phyomyatmin646@gmail.com' },
+      to: [{ email: toEmail }],
+      subject: 'Your Smart City OTP Code',
+      htmlContent: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd;">
+          <h2 style="color: #333;">Smart City Verification</h2>
+          <p>Hello,</p>
+          <p>Your OTP code is: <strong style="font-size: 24px; color: #007bff;">${otp}</strong></p>
+          <p>This code will expire in 5 minutes.</p>
+          <br />
+          <p>Best Regards,<br/>Smart City Team</p>
+        </div>
+      `
+    })
   });
+
+  if (!response.ok) {
+    const err = await response.json();
+    console.error('Brevo error:', err);
+    throw new Error('OTP email send failed');
+  }
+  
+  return response.json();
 };
 
 module.exports = sendEmail;
