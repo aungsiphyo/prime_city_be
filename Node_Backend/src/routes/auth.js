@@ -143,12 +143,6 @@ router.post("/login/step1", async (req, res) => {
       return res.status(401).json({ message: "Wrong password" });
     }
 
-    // ── Admin-only dashboard access ──
-    if (user.role !== "Admin") {
-      return res.status(403).json({
-        message: "Access denied. Only Admin accounts can access this dashboard.",
-      });
-    }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     user.otp = otp;
