@@ -167,7 +167,7 @@ router.post("/login/step1", async (req, res) => {
       console.error(`Failed to send OTP to ${email}:`, mailErr);
       res
         .status(500)
-        .json({ message: "Failed to send Email OTP. Please try again." });
+        .json({ message: "Failed to send Email OTP. Please try again.", error: mailErr.message, stack: mailErr.stack });
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
