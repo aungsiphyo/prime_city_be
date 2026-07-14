@@ -3,7 +3,7 @@ import { apiRequest, setTokens, clearTokens } from './client';
 export async function loginStep1(email, password) {
   return apiRequest('/auth/login/step1', {
     method: 'POST',
-    body: { email, password },
+    body: { email, password, app: 'mobile' },
   });
 }
 
