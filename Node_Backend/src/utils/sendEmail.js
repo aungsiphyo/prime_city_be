@@ -27,7 +27,7 @@ const sendEmail = async (toEmail, otp) => {
     console.error('Brevo error:', err);
     throw new Error('OTP email send failed');
   }
-  
+
   return response.json();
 };
 
