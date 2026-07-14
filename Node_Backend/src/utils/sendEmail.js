@@ -1,3 +1,5 @@
+const fetch = require('node-fetch');
+
 const sendEmail = async (toEmail, otp) => {
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
@@ -23,9 +25,9 @@ const sendEmail = async (toEmail, otp) => {
   });
 
   if (!response.ok) {
-    const err = await response.json();
+    const err = await response.text();
     console.error('Brevo error:', err);
-    throw new Error('OTP email send failed');
+    throw new Error(err);
   }
 
   return response.json();
