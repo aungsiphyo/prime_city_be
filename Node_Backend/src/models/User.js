@@ -32,10 +32,11 @@ const UserSchema = new mongoose.Schema({
 
   role: {
     type: String,
-    enum: ["Citizen", "Admin", "Staff", "Security"],
-    default: "Citizen",
+    enum: ["Resident", "Admin", "Staff", "Helper", "Security"],
+    default: "Resident",
   },
 
+  profile_image: { type: String, default: null },
   created_at: { type: Date, default: Date.now },
   room_id: { type: String },
 

@@ -65,7 +65,7 @@ const generateTokens = (user) => {
 // ================= SIGNUP =================
 router.post("/signup", async (req, res) => {
   try {
-    const { fullname, email, phone, password, role, room_id, rfid_uid } =
+    const { fullname, email, phone, password, role, room_id, rfid_uid, profile_image } =
       req.body;
     const linkedRoom = room_id ? await findRoomByRef(room_id) : null;
     const normalizedRfidUid = normalizeRfidUid(rfid_uid);
@@ -104,6 +104,7 @@ router.post("/signup", async (req, res) => {
       role,
       room_id: linkedRoom ? String(linkedRoom._id) : room_id,
       rfid_uid: normalizedRfidUid || undefined,
+      profile_image: profile_image || null,
     });
     await newUser.save();
     await syncUserRoom(newUser, linkedRoom);
@@ -140,6 +141,13 @@ router.post("/login/step1", async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Wrong password" });
+    }
+
+    // ── Admin-only dashboard access ──
+    if (user.role !== "Admin") {
+      return res.status(403).json({
+        message: "Access denied. Only Admin accounts can access this dashboard.",
+      });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
