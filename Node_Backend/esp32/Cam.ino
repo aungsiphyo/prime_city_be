@@ -1,15 +1,14 @@
+#include <ESP32QRCodeReader.h>
+#include <HTTPClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
-#include <HTTPClient.h>
-#include <ESP32QRCodeReader.h>
 
 // ================= WIFI =================
-const char* WIFI_SSID = "KoMyo";
-const char* WIFI_PASSWORD = "0995138020";
+const char *WIFI_SSID = "KoMyo";
+const char *WIFI_PASSWORD = "0995138020";
 
 // ================= BACKEND =================
-const char* SCAN_ENDPOINT =
-    "https://smart-residential.onrender.com/api/qr-scan";
+const char *SCAN_ENDPOINT = "https://54.87.203.253.sslip.io/api/qr-scan";
 
 // ================= QR READER =================
 ESP32QRCodeReader reader(CAMERA_MODEL_AI_THINKER);
@@ -49,8 +48,7 @@ void connectWiFi() {
 
   unsigned long start = millis();
 
-  while (WiFi.status() != WL_CONNECTED &&
-         millis() - start < 20000) {
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
 
     delay(500);
     Serial.print(".");
@@ -67,7 +65,6 @@ void connectWiFi() {
   } else {
 
     Serial.println("WiFi Failed");
-
   }
 }
 
@@ -102,10 +99,7 @@ void sendQrToServer(const String &payload) {
 
   http.addHeader("Content-Type", "application/json");
 
-  String body =
-      "{\"token\":\"" +
-      escapeJson(payload) +
-      "\"}";
+  String body = "{\"token\":\"" + escapeJson(payload) + "\"}";
 
   Serial.print("Body : ");
   Serial.println(body);
@@ -124,25 +118,25 @@ void sendQrToServer(const String &payload) {
 
   switch (code) {
 
-    case 200:
+  case 200:
 
-      Serial.println("Visitor Accepted");
-      break;
+    Serial.println("Visitor Accepted");
+    break;
 
-    case 400:
+  case 400:
 
-      Serial.println("Bad Request");
-      break;
+    Serial.println("Bad Request");
+    break;
 
-    case 401:
+  case 401:
 
-      Serial.println("Invalid QR");
-      break;
+    Serial.println("Invalid QR");
+    break;
 
-    default:
+  default:
 
-      Serial.println("Server Error");
-      break;
+    Serial.println("Server Error");
+    break;
   }
 }
 
@@ -174,8 +168,7 @@ void qrTask(void *pvParameters) {
 
       unsigned long now = millis();
 
-      if (payload == lastPayload &&
-          now - lastScanAt < DUPLICATE_COOLDOWN_MS) {
+      if (payload == lastPayload && now - lastScanAt < DUPLICATE_COOLDOWN_MS) {
 
         Serial.println("Duplicate Ignored");
 
@@ -215,20 +208,10 @@ void setup() {
 
   reader.beginOnCore(1);
 
-  xTaskCreate(
-      qrTask,
-      "QRTask",
-      6144,
-      NULL,
-      4,
-      NULL);
+  xTaskCreate(qrTask, "QRTask", 6144, NULL, 4, NULL);
 
   Serial.println("QR Scanner Ready");
 }
 
 // ================= LOOP =================
-void loop() {
-
-  delay(1000);
-
-}
+void loop() { delay(1000); }
