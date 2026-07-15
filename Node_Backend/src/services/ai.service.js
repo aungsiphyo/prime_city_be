@@ -5,7 +5,7 @@ const { retrieveKnowledge, buildRagContext } = require("./rag.service");
 const { classifyIntent, isToolIntent } = require("./intent.service");
 
 const OLLAMA_BASE_URL = (
-  process.env.OLLAMA_BASE_URL || "https://smart-residential.onrender.com"
+  process.env.OLLAMA_BASE_URL || "https://54.87.203.253.sslip.io"
 ).replace(/\/+$/, "");
 
 function numberEnv(name, fallback, { min = Number.NEGATIVE_INFINITY } = {}) {
@@ -775,9 +775,9 @@ async function chat({
       manualToolContext(trimmed, user),
       enableRag
         ? retrieveKnowledge(trimmed, user, { audienceHint }).catch((err) => {
-            console.warn("[ai.service] RAG retrieval failed:", err.message);
-            return [];
-          })
+          console.warn("[ai.service] RAG retrieval failed:", err.message);
+          return [];
+        })
         : Promise.resolve([]),
     ]);
     const ragContext = buildRagContext(ragDocs);
