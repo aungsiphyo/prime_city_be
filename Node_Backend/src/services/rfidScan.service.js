@@ -65,7 +65,7 @@ async function validateRfidScan(data = {}) {
   if (hardwareUid) residentQuery.push({ rfid_uid: hardwareUid });
 
   const resident = await User.findOne({
-    role: "Citizen",
+    role: "Resident",
     $or: residentQuery,
   })
     .select("_id resident_uid rfid_uid fullname email phone role room_id")
@@ -79,10 +79,10 @@ async function validateRfidScan(data = {}) {
     const visitor =
       visitorQuery.length > 0
         ? await Visitor.findOne({ $or: visitorQuery })
-            .select(
-              "_id visitor_uid rfid_uid fullname firstName lastName phone email badgeNumber hostName purpose check_in_time check_out_time",
-            )
-            .lean()
+          .select(
+            "_id visitor_uid rfid_uid fullname firstName lastName phone email badgeNumber hostName purpose check_in_time check_out_time",
+          )
+          .lean()
         : null;
 
     if (visitor) {
@@ -163,11 +163,11 @@ async function validateRfidScan(data = {}) {
     },
     room: room
       ? {
-          id: String(room._id),
-          room_name: room.room_name,
-          floor: room.floor,
-          status: room.status,
-        }
+        id: String(room._id),
+        room_name: room.room_name,
+        floor: room.floor,
+        status: room.status,
+      }
       : null,
   };
 
