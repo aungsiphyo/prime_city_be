@@ -3,10 +3,7 @@ const { getToolSchemas } = require("./toolRegistry");
 const { runTool } = require("./aiTools.service");
 const { retrieveKnowledge, buildRagContext } = require("./rag.service");
 const { classifyIntent, isToolIntent } = require("./intent.service");
-
-const OLLAMA_BASE_URL = (
-  process.env.OLLAMA_BASE_URL || "https://54.87.203.253.sslip.io"
-).replace(/\/+$/, "");
+const { GoogleGenAI } = require("@google/genai");
 
 function numberEnv(name, fallback, { min = Number.NEGATIVE_INFINITY } = {}) {
   const value = Number(process.env[name]);
@@ -16,14 +13,8 @@ function numberEnv(name, fallback, { min = Number.NEGATIVE_INFINITY } = {}) {
   return fallback;
 }
 
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:12b";
-const OLLAMA_TIMEOUT_MS = numberEnv("OLLAMA_TIMEOUT_MS", 120000, {
-  min: 1000,
-});
-const OLLAMA_NUM_CTX = numberEnv("OLLAMA_NUM_CTX", 4096, { min: 512 });
-const OLLAMA_NUM_PREDICT = numberEnv("OLLAMA_NUM_PREDICT", 180, { min: 32 });
-const OLLAMA_TEMPERATURE = numberEnv("OLLAMA_TEMPERATURE", 0.3, { min: 0 });
-const OLLAMA_THINK = process.env.OLLAMA_THINK === "true";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-pro";
+const GEMINI_TEMPERATURE = numberEnv("GEMINI_TEMPERATURE", 0.3, { min: 0 });
 const AI_HISTORY_LIMIT = numberEnv("AI_HISTORY_LIMIT", 8, { min: 0 });
 
 const SYSTEM_PROMPT =
@@ -87,7 +78,7 @@ function ensureConversationId(conversationId) {
   return conversationId || `conv-${crypto.randomUUID()}`;
 }
 
-function normalizeHistory(history) {
+function normalizeHistoryForGemini(history) {
   if (!Array.isArray(history)) return [];
   if (AI_HISTORY_LIMIT === 0) return [];
 
@@ -98,8 +89,8 @@ function normalizeHistory(history) {
     )
     .slice(-AI_HISTORY_LIMIT)
     .map((entry) => ({
-      role: entry.role === "assistant" ? "assistant" : "user",
-      content: entry.content.trim(),
+      role: entry.role === "assistant" ? "model" : "user",
+      parts: [{ text: entry.content.trim() }],
     }));
 }
 
@@ -482,46 +473,7 @@ function buildToolAssistantContent(toolName, result) {
   return "Tool result ရရှိပါတယ်။";
 }
 
-async function callOllama(messages, { toolsEnabled = false } = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT_MS);
-
-  try {
-    const body = {
-      model: OLLAMA_MODEL,
-      messages,
-      stream: false,
-      think: OLLAMA_THINK,
-      options: {
-        num_ctx: OLLAMA_NUM_CTX,
-        num_predict: OLLAMA_NUM_PREDICT,
-        temperature: OLLAMA_TEMPERATURE,
-      },
-    };
-
-    if (toolsEnabled) {
-      body.tools = getToolSchemas();
-    }
-
-    const res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      const detail = data.error || data.message || res.statusText;
-      throw new Error(`Ollama request failed (${res.status}): ${detail}`);
-    }
-
-    return data;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
+// Gemini API Call handles its own timeout and configurations.
 
 async function manualToolContext(message, user) {
   const text = message.toLowerCase();
@@ -732,7 +684,7 @@ async function chat({
           assistantMessage,
           toolCalls,
           knowledgeSources,
-          model: OLLAMA_MODEL,
+          model: GEMINI_MODEL,
           usedFallback,
           intent,
         };
@@ -789,33 +741,27 @@ async function chat({
       audience: doc.audience,
     }));
 
-    const baseMessages = [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "system", content: RESPONSE_STYLE_PROMPT },
+    const systemInstructionParts = [
+      SYSTEM_PROMPT,
+      RESPONSE_STYLE_PROMPT
     ];
 
-    // Inject user identity so the AI can personalize responses immediately
     const userContext = buildUserContext(user);
     if (userContext) {
-      baseMessages.push({ role: "system", content: userContext });
+      systemInstructionParts.push(userContext);
     }
 
-    baseMessages.push({
-      role: "system",
-      content: `Detected intent: ${intent.name}. Confidence: ${intent.confidence}.`,
-    });
+    systemInstructionParts.push(`Detected intent: ${intent.name}. Confidence: ${intent.confidence}.`);
 
     if (ragContext) {
-      baseMessages.push({
-        role: "system",
-        content:
-          "Use the following knowledge base context when it helps answer the user. " +
-          "Prefer this context over general knowledge. If neither the knowledge base nor backend tool data answers the question, say the information is not available.\n\n" +
-          ragContext,
-      });
+      systemInstructionParts.push(
+        "Use the following knowledge base context when it helps answer the user. " +
+        "Prefer this context over general knowledge. If neither the knowledge base nor backend tool data answers the question, say the information is not available.\n\n" +
+        ragContext
+      );
     }
 
-    baseMessages.push(...normalizeHistory(history));
+    const geminiMessages = normalizeHistoryForGemini(history);
 
     if (toolContext) {
       toolCalls = [
@@ -827,33 +773,57 @@ async function chat({
         },
       ];
 
-      baseMessages.push({
+      geminiMessages.push({
         role: "user",
-        content:
-          `Backend tool result:\n${JSON.stringify(toolContext, null, 2)}\n\n` +
-          `User question: ${trimmed}`,
+        parts: [{ text: `Backend tool result:\n${JSON.stringify(toolContext, null, 2)}\n\nUser question: ${trimmed}` }],
       });
     } else {
-      baseMessages.push({
+      geminiMessages.push({
         role: "user",
-        content: trimmed,
+        parts: [{ text: trimmed }],
       });
     }
 
     const toolsEnabled = shouldEnableTools(trimmed);
+    const config = {
+      systemInstruction: systemInstructionParts.join("\n\n"),
+      temperature: GEMINI_TEMPERATURE,
+    };
 
-    const response = await callOllama(baseMessages, { toolsEnabled });
+    if (toolsEnabled) {
+      const toolSchemas = getToolSchemas();
+      if (toolSchemas && toolSchemas.length > 0) {
+        config.tools = [{ functionDeclarations: toolSchemas }];
+      }
+    }
 
-    assistantContent = response.message?.content?.trim();
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: geminiMessages,
+      config,
+    });
+
+    if (response.functionCalls && response.functionCalls.length > 0) {
+      const call = response.functionCalls[0];
+      const toolName = call.name;
+      const args = call.args;
+
+      const toolResult = await runTool(toolName, args, user);
+      toolCalls = [{ function: { name: toolName, arguments: args } }];
+      assistantContent = buildToolAssistantContent(toolName, toolResult);
+    } else {
+      assistantContent = response.text?.trim();
+    }
 
     if (!assistantContent) {
-      throw new Error("Ollama returned empty response");
+      throw new Error("Gemini returned empty response");
     }
   } catch (err) {
-    console.warn("[ai.service] Ollama unavailable:", err.message);
+    console.warn("[ai.service] AI API unavailable:", err.message);
     usedFallback = true;
     assistantContent =
-      "AI model response မရသေးပါ။ Backend/Ollama connection ကိုစစ်ပါ။ " +
+      "AI model response မရသေးပါ။ Gemini API connection နဲ့ Key ကိုစစ်ပါ။ " +
       "Real-time DB tool မေးခွန်းတွေကိုတော့ available ဖြစ်သလောက် ဆက်ဖြေပေးနိုင်ပါတယ်။";
   }
 
@@ -869,7 +839,7 @@ async function chat({
     assistantMessage,
     toolCalls,
     knowledgeSources,
-    model: OLLAMA_MODEL,
+    model: GEMINI_MODEL,
     usedFallback,
     intent,
   };
@@ -879,11 +849,7 @@ module.exports = {
   chat,
   createMessage,
   SYSTEM_PROMPT,
-  OLLAMA_BASE_URL,
-  OLLAMA_MODEL,
-  OLLAMA_NUM_CTX,
-  OLLAMA_NUM_PREDICT,
-  OLLAMA_TEMPERATURE,
-  OLLAMA_THINK,
+  GEMINI_MODEL,
+  GEMINI_TEMPERATURE,
   AI_HISTORY_LIMIT,
 };
