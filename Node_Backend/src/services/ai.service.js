@@ -13,7 +13,7 @@ function numberEnv(name, fallback, { min = Number.NEGATIVE_INFINITY } = {}) {
   return fallback;
 }
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-pro";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 const GEMINI_TEMPERATURE = numberEnv("GEMINI_TEMPERATURE", 0.3, { min: 0 });
 const AI_HISTORY_LIMIT = numberEnv("AI_HISTORY_LIMIT", 8, { min: 0 });
 
