@@ -13,9 +13,14 @@ function numberEnv(name, fallback, { min = Number.NEGATIVE_INFINITY } = {}) {
   return fallback;
 }
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+// Text Chat model (Gemini 3.1 Flash Lite)
+const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3.1-flash-lite";
+// Voice Chat model (Gemini 2.5 Flash - native audio)
+const GEMINI_VOICE_MODEL = process.env.GEMINI_VOICE_MODEL || "gemini-2.5-flash-native-audio";
 const GEMINI_TEMPERATURE = numberEnv("GEMINI_TEMPERATURE", 0.3, { min: 0 });
 const AI_HISTORY_LIMIT = numberEnv("AI_HISTORY_LIMIT", 8, { min: 0 });
+// Keep backward-compat alias
+const GEMINI_MODEL = GEMINI_TEXT_MODEL;
 
 const SYSTEM_PROMPT =
   process.env.AI_SYSTEM_PROMPT ||
@@ -626,7 +631,7 @@ async function chat({
       assistantMessage,
       toolCalls,
       knowledgeSources,
-      model: GEMINI_MODEL,
+      model: GEMINI_TEXT_MODEL,
       usedFallback,
       intent,
     };
@@ -717,7 +722,7 @@ async function chat({
         assistantMessage,
         toolCalls,
         knowledgeSources,
-        model: GEMINI_MODEL,
+        model: GEMINI_TEXT_MODEL,
         usedFallback,
         intent,
       };
@@ -799,7 +804,7 @@ async function chat({
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
+      model: GEMINI_TEXT_MODEL,
       contents: geminiMessages,
       config,
     });
@@ -839,16 +844,140 @@ async function chat({
     assistantMessage,
     toolCalls,
     knowledgeSources,
-    model: GEMINI_MODEL,
+    model: GEMINI_TEXT_MODEL,
     usedFallback,
     intent,
   };
 }
 
+/**
+ * Voice Chat — 2-step pipeline
+ *
+ * Step 1 (UNDERSTAND): Gemini 3.1 Flash Lite receives the user's audio,
+ *   transcribes/understands it, and generates a text reply (with RAG/tool context).
+ *
+ * Step 2 (SPEAK): Gemini 2.5 Flash Preview TTS converts that text reply
+ *   into a natural-sounding audio response.
+ *
+ * @param {object} params
+ * @param {string} params.audioBase64    - Base64 encoded mic audio from mobile
+ * @param {string} params.mimeType       - Audio MIME type (e.g. "audio/m4a")
+ * @param {object|null} params.user      - Authenticated user object
+ * @param {string|null} params.voicePreset - Gemini voice name (Aoede/Puck/Charon/Kore/Fenrir)
+ */
+async function voiceChat({
+  audioBase64,
+  mimeType = "audio/m4a",
+  user = null,
+  voicePreset = null,
+}) {
+  if (!audioBase64) {
+    throw new Error("audioBase64 is required for voice chat");
+  }
+
+  const systemInstructionParts = [SYSTEM_PROMPT];
+  const userContext = buildUserContext(user);
+  if (userContext) systemInstructionParts.push(userContext);
+  systemInstructionParts.push(
+    "You are responding via voice. Keep answers short, natural, and conversational. " +
+    "1-3 sentences max unless the user asks for detail. Do not use markdown formatting."
+  );
+  const systemInstruction = systemInstructionParts.join("\n\n");
+
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+  // ── Step 1: Understand audio → get text reply ────────────────────
+  let textReply = "";
+  let transcript = null;
+
+  try {
+    const understandResponse = await ai.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: audioBase64,
+              },
+            },
+            {
+              text: "Please respond to what the user said above.",
+            },
+          ],
+        },
+      ],
+      config: {
+        systemInstruction,
+        temperature: GEMINI_TEMPERATURE,
+      },
+    });
+
+    textReply = understandResponse.text?.trim() || "";
+    transcript = textReply;
+
+    if (!textReply) {
+      throw new Error("Voice understand step returned empty text");
+    }
+  } catch (err) {
+    console.warn("[ai.service] voiceChat understand error:", err.message);
+    throw err;
+  }
+
+  // ── Step 2: Speak — convert text reply → audio ───────────────────
+  const speechConfig = {
+    voiceConfig: {
+      prebuiltVoiceConfig: {
+        voiceName: voicePreset || process.env.GEMINI_VOICE_PRESET || "Aoede",
+      },
+    },
+  };
+
+  try {
+    const ttsResponse = await ai.models.generateContent({
+      model: GEMINI_VOICE_MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: textReply }],
+        },
+      ],
+      config: {
+        responseModalities: ["AUDIO"],
+        speechConfig,
+      },
+    });
+
+    const candidate = ttsResponse.candidates?.[0];
+    const audioPart = candidate?.content?.parts?.find(
+      (p) => p.inlineData?.mimeType?.startsWith("audio/")
+    );
+
+    if (!audioPart) {
+      throw new Error("TTS model returned no audio");
+    }
+
+    return {
+      audioBase64: audioPart.inlineData.data,
+      audioMimeType: audioPart.inlineData.mimeType,
+      transcript,
+      model: `${GEMINI_TEXT_MODEL} + ${GEMINI_VOICE_MODEL}`,
+    };
+  } catch (err) {
+    console.warn("[ai.service] voiceChat TTS error:", err.message);
+    throw err;
+  }
+}
+
 module.exports = {
   chat,
+  voiceChat,
   createMessage,
   SYSTEM_PROMPT,
+  GEMINI_TEXT_MODEL,
+  GEMINI_VOICE_MODEL,
   GEMINI_MODEL,
   GEMINI_TEMPERATURE,
   AI_HISTORY_LIMIT,

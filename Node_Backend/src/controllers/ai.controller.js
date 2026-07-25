@@ -298,8 +298,58 @@ async function getMyChatHistory(req, res) {
   }
 }
 
+async function postVoice(req, res) {
+  try {
+    const { audioBase64, mimeType, voicePreset } = req.body;
+
+    if (!audioBase64 || typeof audioBase64 !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "audioBase64 is required and must be a string",
+      });
+    }
+
+    const resolvedMime = typeof mimeType === "string" ? mimeType : "audio/m4a";
+    const userId = getUserId(req.user);
+    const currentUser = await User.findById(userId)
+      .select("_id fullname role room_id resident_uid")
+      .lean();
+
+    if (!currentUser) {
+      return res.status(401).json({
+        success: false,
+        message: "Authenticated user account was not found",
+      });
+    }
+
+    const result = await aiService.voiceChat({
+      audioBase64,
+      mimeType: resolvedMime,
+      user: currentUser,
+      voicePreset: typeof voicePreset === "string" ? voicePreset : null,
+    });
+
+    return res.status(200).json({
+      success: true,
+      audioBase64: result.audioBase64,
+      audioMimeType: result.audioMimeType,
+      transcript: result.transcript,
+      meta: {
+        model: result.model,
+      },
+    });
+  } catch (err) {
+    console.error("POST /api/ai/voice error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || "Failed to process voice message",
+    });
+  }
+}
+
 module.exports = {
   postChat,
   postFeedback,
   getMyChatHistory,
+  postVoice,
 };
