@@ -950,6 +950,33 @@ async function voiceChat({
       },
     });
 
+function pcmToWav(pcmBuffer) {
+  const numChannels = 1;
+  const sampleRate = 24000;
+  const byteRate = sampleRate * numChannels * 2;
+  const blockAlign = numChannels * 2;
+  const dataSize = pcmBuffer.length;
+  
+  const buffer = Buffer.alloc(44 + dataSize);
+  
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16); 
+  buffer.writeUInt16LE(1, 20); 
+  buffer.writeUInt16LE(numChannels, 22);
+  buffer.writeUInt32LE(sampleRate, 24); 
+  buffer.writeUInt32LE(byteRate, 28); 
+  buffer.writeUInt16LE(blockAlign, 32); 
+  buffer.writeUInt16LE(16, 34); 
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+  pcmBuffer.copy(buffer, 44);
+  
+  return buffer;
+}
+
     const candidate = ttsResponse.candidates?.[0];
     const audioPart = candidate?.content?.parts?.find(
       (p) => p.inlineData?.mimeType?.startsWith("audio/")
@@ -959,9 +986,12 @@ async function voiceChat({
       throw new Error("TTS model returned no audio");
     }
 
+    const pcmBuffer = Buffer.from(audioPart.inlineData.data, "base64");
+    const wavBuffer = pcmToWav(pcmBuffer);
+
     return {
-      audioBase64: audioPart.inlineData.data,
-      audioMimeType: audioPart.inlineData.mimeType,
+      audioBase64: wavBuffer.toString("base64"),
+      audioMimeType: "audio/wav",
       transcript,
       model: `${GEMINI_TEXT_MODEL} + ${GEMINI_VOICE_MODEL}`,
     };
