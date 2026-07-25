@@ -905,7 +905,7 @@ async function voiceChat({
               },
             },
             {
-              text: "You are an audio transcription AI. Transcribe the user's audio accurately in Myanmar or English. If the audio is completely silent, noisy, or you cannot hear any words, set userTranscript to '[No speech detected]'. Return ONLY valid JSON: { \"userTranscript\": \"what the user said\" }. Do not include markdown code blocks.",
+              text: "You are an audio transcription AI. Transcribe the user's audio accurately in Myanmar or English. If the audio is completely silent, noisy, or you cannot hear any words, set the transcript string to '[No speech detected]'. Return ONLY a JSON object with a single key 'userTranscript' containing the actual transcribed text. Example format: {\"userTranscript\": \"actual transcription here\"}. Do not return the literal words 'what the user said'. Do not include markdown code blocks.",
             },
           ],
         },
