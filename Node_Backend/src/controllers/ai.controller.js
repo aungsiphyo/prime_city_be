@@ -334,6 +334,7 @@ async function postVoice(req, res) {
       audioBase64: result.audioBase64,
       audioMimeType: result.audioMimeType,
       transcript: result.transcript,
+      userTranscript: result.userTranscript,
       meta: {
         model: result.model,
       },

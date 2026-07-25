@@ -904,7 +904,7 @@ async function voiceChat({
               },
             },
             {
-              text: "Please respond to what the user said above.",
+              text: "You are HomeMate. First transcribe the user's audio accurately. Then provide your helpful response. Return ONLY valid JSON in this exact format: { \"userTranscript\": \"what the user said\", \"reply\": \"your reply to the user\" }. Do not include markdown code blocks.",
             },
           ],
         },
@@ -912,11 +912,22 @@ async function voiceChat({
       config: {
         systemInstruction,
         temperature: GEMINI_TEMPERATURE,
+        responseMimeType: "application/json",
       },
     });
 
-    textReply = understandResponse.text?.trim() || "";
+    const responseText = understandResponse.text?.trim() || "{}";
+    let parsed = {};
+    try {
+      parsed = JSON.parse(responseText);
+    } catch(e) {
+      console.warn("Failed to parse JSON from Voice Understand step", responseText);
+      parsed = { reply: responseText };
+    }
+
+    textReply = parsed.reply || "AI response မရပါ။";
     transcript = textReply;
+    const userTranscript = parsed.userTranscript || "[Audio Processing Failed]";
 
     if (!textReply) {
       throw new Error("Voice understand step returned empty text");
@@ -993,6 +1004,7 @@ function pcmToWav(pcmBuffer) {
       audioBase64: wavBuffer.toString("base64"),
       audioMimeType: "audio/wav",
       transcript,
+      userTranscript,
       model: `${GEMINI_TEXT_MODEL} + ${GEMINI_VOICE_MODEL}`,
     };
   } catch (err) {
