@@ -626,7 +626,7 @@ async function chat({
       assistantMessage,
       toolCalls,
       knowledgeSources,
-      model: OLLAMA_MODEL,
+      model: GEMINI_MODEL,
       usedFallback,
       intent,
     };
@@ -717,7 +717,7 @@ async function chat({
         assistantMessage,
         toolCalls,
         knowledgeSources,
-        model: OLLAMA_MODEL,
+        model: GEMINI_MODEL,
         usedFallback,
         intent,
       };
