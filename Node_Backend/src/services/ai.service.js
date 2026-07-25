@@ -1008,8 +1008,25 @@ function pcmToWav(pcmBuffer) {
       model: `${GEMINI_TEXT_MODEL} + ${GEMINI_VOICE_MODEL}`,
     };
   } catch (err) {
-    console.warn("[ai.service] voiceChat TTS error:", err.message);
-    throw err;
+    console.warn("[ai.service] voiceChat TTS error, falling back to Google TTS:", err.message);
+    const googleTTS = require('google-tts-api');
+    try {
+      const b64 = await googleTTS.getAudioBase64(textReply, {
+        lang: 'my',
+        slow: false,
+        host: 'https://translate.google.com',
+      });
+      return {
+        audioBase64: b64,
+        audioMimeType: "audio/mp3",
+        transcript,
+        userTranscript,
+        model: `${GEMINI_TEXT_MODEL} + GoogleTTS`,
+      };
+    } catch (ttsErr) {
+      console.error("Google TTS also failed", ttsErr);
+      throw err; // throw original Gemini error if fallback fails
+    }
   }
 }
 
