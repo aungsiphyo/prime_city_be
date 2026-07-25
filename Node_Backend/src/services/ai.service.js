@@ -889,6 +889,7 @@ async function voiceChat({
   // ── Step 1: Understand audio → get text reply ────────────────────
   let textReply = "";
   let transcript = null;
+  let userTranscript = null;
 
   try {
     const understandResponse = await ai.models.generateContent({
@@ -927,7 +928,7 @@ async function voiceChat({
 
     textReply = parsed.reply || "AI response မရပါ။";
     transcript = textReply;
-    const userTranscript = parsed.userTranscript || "[Audio Processing Failed]";
+    userTranscript = parsed.userTranscript || "[Audio Processing Failed]";
 
     if (!textReply) {
       throw new Error("Voice understand step returned empty text");
