@@ -13,9 +13,14 @@ function numberEnv(name, fallback, { min = Number.NEGATIVE_INFINITY } = {}) {
   return fallback;
 }
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+// Text Chat model (Gemini 3.1 Flash Lite)
+const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3.1-flash-lite";
+// Voice Chat model (Gemini 2.5 Flash - native audio)
+const GEMINI_VOICE_MODEL = process.env.GEMINI_VOICE_MODEL || "gemini-2.5-flash-native-audio";
 const GEMINI_TEMPERATURE = numberEnv("GEMINI_TEMPERATURE", 0.3, { min: 0 });
 const AI_HISTORY_LIMIT = numberEnv("AI_HISTORY_LIMIT", 8, { min: 0 });
+// Keep backward-compat alias
+const GEMINI_MODEL = GEMINI_TEXT_MODEL;
 
 const SYSTEM_PROMPT =
   process.env.AI_SYSTEM_PROMPT ||
@@ -626,7 +631,7 @@ async function chat({
       assistantMessage,
       toolCalls,
       knowledgeSources,
-      model: GEMINI_MODEL,
+      model: GEMINI_TEXT_MODEL,
       usedFallback,
       intent,
     };
@@ -717,7 +722,7 @@ async function chat({
         assistantMessage,
         toolCalls,
         knowledgeSources,
-        model: GEMINI_MODEL,
+        model: GEMINI_TEXT_MODEL,
         usedFallback,
         intent,
       };
@@ -799,7 +804,7 @@ async function chat({
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
+      model: GEMINI_TEXT_MODEL,
       contents: geminiMessages,
       config,
     });
@@ -839,16 +844,105 @@ async function chat({
     assistantMessage,
     toolCalls,
     knowledgeSources,
-    model: GEMINI_MODEL,
+    model: GEMINI_TEXT_MODEL,
     usedFallback,
     intent,
   };
 }
 
+/**
+ * Voice Chat — Gemini 2.5 Flash Native Audio Dialog
+ * Accepts base64-encoded audio from the mobile app and returns
+ * a base64-encoded audio response using native audio modality.
+ *
+ * @param {object} params
+ * @param {string} params.audioBase64   - Base64 encoded audio from mic
+ * @param {string} params.mimeType      - Audio MIME type (e.g. "audio/m4a", "audio/wav")
+ * @param {object|null} params.user     - Authenticated user object
+ * @param {string|null} params.voicePreset - Optional Gemini voice name (e.g. "Aoede", "Puck")
+ */
+async function voiceChat({
+  audioBase64,
+  mimeType = "audio/m4a",
+  user = null,
+  voicePreset = null,
+}) {
+  if (!audioBase64) {
+    throw new Error("audioBase64 is required for voice chat");
+  }
+
+  const systemInstructionParts = [SYSTEM_PROMPT];
+  const userContext = buildUserContext(user);
+  if (userContext) systemInstructionParts.push(userContext);
+  // Voice responses should be concise and natural-sounding
+  systemInstructionParts.push(
+    "You are responding via voice. Keep answers short, natural, and conversational. 1-3 sentences max unless the user asks for detail."
+  );
+
+  const speechConfig = {
+    voiceConfig: {
+      prebuiltVoiceConfig: {
+        voiceName: voicePreset || process.env.GEMINI_VOICE_PRESET || "Aoede",
+      },
+    },
+  };
+
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+  try {
+    const response = await ai.models.generateContent({
+      model: GEMINI_VOICE_MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: audioBase64,
+              },
+            },
+          ],
+        },
+      ],
+      config: {
+        systemInstruction: systemInstructionParts.join("\n\n"),
+        temperature: GEMINI_TEMPERATURE,
+        responseModalities: ["AUDIO"],
+        speechConfig,
+      },
+    });
+
+    // Extract audio part from response
+    const candidate = response.candidates?.[0];
+    const audioPart = candidate?.content?.parts?.find(
+      (p) => p.inlineData?.mimeType?.startsWith("audio/")
+    );
+    const textPart = candidate?.content?.parts?.find((p) => p.text);
+
+    if (!audioPart) {
+      throw new Error("Voice model returned no audio");
+    }
+
+    return {
+      audioBase64: audioPart.inlineData.data,
+      audioMimeType: audioPart.inlineData.mimeType,
+      transcript: textPart?.text || null,
+      model: GEMINI_VOICE_MODEL,
+    };
+  } catch (err) {
+    console.warn("[ai.service] voiceChat error:", err.message);
+    throw err;
+  }
+}
+
 module.exports = {
   chat,
+  voiceChat,
   createMessage,
   SYSTEM_PROMPT,
+  GEMINI_TEXT_MODEL,
+  GEMINI_VOICE_MODEL,
   GEMINI_MODEL,
   GEMINI_TEMPERATURE,
   AI_HISTORY_LIMIT,
