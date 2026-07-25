@@ -905,14 +905,13 @@ async function voiceChat({
               },
             },
             {
-              text: "You are HomeMate. First transcribe the user's audio accurately. Then provide your helpful response. Return ONLY valid JSON in this exact format: { \"userTranscript\": \"what the user said\", \"reply\": \"your reply to the user\" }. Do not include markdown code blocks.",
+              text: "You are an audio transcription AI. Transcribe the user's audio accurately in Myanmar or English. If the audio is completely silent, noisy, or you cannot hear any words, set userTranscript to '[No speech detected]'. Return ONLY valid JSON: { \"userTranscript\": \"what the user said\" }. Do not include markdown code blocks.",
             },
           ],
         },
       ],
       config: {
-        systemInstruction,
-        temperature: GEMINI_TEMPERATURE,
+        temperature: 0.1,
         responseMimeType: "application/json",
       },
     });
@@ -923,16 +922,22 @@ async function voiceChat({
       parsed = JSON.parse(responseText);
     } catch(e) {
       console.warn("Failed to parse JSON from Voice Understand step", responseText);
-      parsed = { reply: responseText };
     }
 
-    textReply = parsed.reply || "AI response မရပါ။";
-    transcript = textReply;
     userTranscript = parsed.userTranscript || "[Audio Processing Failed]";
 
-    if (!textReply) {
-      throw new Error("Voice understand step returned empty text");
+    if (!userTranscript || userTranscript === "[No speech detected]" || userTranscript === "[Audio Processing Failed]") {
+      textReply = "အသံကို သေချာမကြားရပါဘူး။ ပြန်ပြောပေးလို့ ရမလားခင်ဗျာ။";
+    } else {
+      // Pass the transcribed text into the main chat logic so it uses DB tools, intents, and RAG!
+      const chatResponse = await chat({
+        message: userTranscript,
+        user,
+      });
+      textReply = chatResponse.assistantMessage?.content || "AI response မရပါ။";
     }
+    
+    transcript = textReply;
   } catch (err) {
     console.warn("[ai.service] voiceChat understand error:", err.message);
     throw err;
