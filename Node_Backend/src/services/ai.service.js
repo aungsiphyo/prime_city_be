@@ -15,8 +15,8 @@ function numberEnv(name, fallback, { min = Number.NEGATIVE_INFINITY } = {}) {
 
 // Text Chat model (Gemini 3.1 Flash Lite)
 const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3.1-flash-lite";
-// Voice Chat model (Gemini 2.5 Flash - native audio)
-const GEMINI_VOICE_MODEL = process.env.GEMINI_VOICE_MODEL || "gemini-2.5-flash-native-audio";
+// Voice Chat model (Gemini 3.1 Flash TTS Preview - native audio)
+const GEMINI_VOICE_MODEL = process.env.GEMINI_VOICE_MODEL || "gemini-3.1-flash-tts-preview";
 const GEMINI_TEMPERATURE = numberEnv("GEMINI_TEMPERATURE", 0.3, { min: 0 });
 const AI_HISTORY_LIMIT = numberEnv("AI_HISTORY_LIMIT", 8, { min: 0 });
 // Keep backward-compat alias
