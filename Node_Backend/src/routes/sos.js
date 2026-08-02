@@ -12,6 +12,43 @@ function getUserId(req) {
   return req.user?.id || req.user?._id;
 }
 
+function isObjectId(value) {
+  return mongoose.Types.ObjectId.isValid(String(value || ""));
+}
+
+async function resolveRoomReference(roomRef, residentId) {
+  const normalizedRoomRef = String(roomRef || "").trim();
+
+  if (isObjectId(residentId)) {
+    const assignedRoom = await Room.findOne({ resident_id: residentId })
+      .select("_id room_name")
+      .lean();
+
+    if (assignedRoom) {
+      return {
+        roomId: assignedRoom._id,
+        roomLabel: assignedRoom.room_name,
+      };
+    }
+  }
+
+  if (!normalizedRoomRef) {
+    return { roomId: null, roomLabel: null };
+  }
+
+  const roomQuery = isObjectId(normalizedRoomRef)
+    ? { _id: normalizedRoomRef }
+    : { room_name: normalizedRoomRef };
+  const linkedRoom = await Room.findOne(roomQuery)
+    .select("_id room_name")
+    .lean();
+
+  return {
+    roomId: linkedRoom?._id || null,
+    roomLabel: linkedRoom?.room_name || normalizedRoomRef,
+  };
+}
+
 function emitNotificationToUser(app, userId, notification) {
   const io = app.get("io");
   const users = app.get("onlineUsers") || {};
@@ -152,36 +189,55 @@ router.post("/", optionalAuth, async (req, res) => {
     let { resident_id, room_id, message, alert_type = "General" } = req.body;
     const { priority = "High" } = req.body;
     const currentUserId = getUserId(req);
+    let currentUser = null;
 
-    if (currentUserId && (!resident_id || !room_id)) {
-      const currentUser = await User.findById(currentUserId)
+    if (currentUserId) {
+      currentUser = await User.findById(currentUserId)
         .select("_id room_id")
         .lean();
-      resident_id = resident_id || currentUser?._id;
-      room_id = room_id || currentUser?.room_id;
+
+      if (!currentUser) {
+        return res.status(401).json({
+          success: false,
+          message: "Authenticated user was not found",
+        });
+      }
+
+      // Authenticated SOS requests must always belong to the signed-in user.
+      resident_id = currentUser._id;
+      room_id = currentUser.room_id || room_id;
     }
 
-    if (!resident_id || !room_id || !message) {
+    if (!resident_id || !message) {
       return res.status(400).json({
         success: false,
-        message: "resident_id, room_id and message are required",
+        message: "resident_id and message are required",
       });
     }
 
-    // Resolve room reference when a non-ObjectId (e.g., room name like "A222") is provided
-    if (room_id && !mongoose.Types.ObjectId.isValid(String(room_id))) {
-      const lookup = String(room_id || "").trim();
-      const linkedRoom = await Room.findOne({
-        $or: [{ room_name: lookup }, { room_id: lookup }],
+    if (!isObjectId(resident_id)) {
+      return res.status(400).json({
+        success: false,
+        message: "resident_id must be a valid user id",
       });
-      if (linkedRoom) {
-        room_id = String(linkedRoom._id);
-      }
+    }
+
+    const resolvedRoom = await resolveRoomReference(room_id, resident_id);
+    room_id = resolvedRoom.roomId;
+    const roomLabel = resolvedRoom.roomLabel;
+
+    if (!roomLabel) {
+      return res.status(400).json({
+        success: false,
+        message: "A room location is required to send SOS",
+      });
     }
 
     const sos = await SosAlert.create({
       resident_id,
-      room_id,
+      ...(room_id ? { room_id } : {}),
+      room_label: roomLabel,
+      source: "Mobile",
       message,
       alert_type,
       priority,
@@ -212,13 +268,14 @@ router.post("/", optionalAuth, async (req, res) => {
       responderUsers.map((user) => user._id),
       {
         title: `SOS Alert: ${alert_type}`,
-        message,
+        message: roomLabel ? `${message} Location: ${roomLabel}.` : message,
         type: "SOS",
         data: {
           sos_id: String(populatedSos._id),
           alert_type,
           priority,
-          room_id: String(room_id),
+          room_id: room_id ? String(room_id) : "",
+          room_label: roomLabel || "",
           resident_id: String(resident_id),
         },
       },
