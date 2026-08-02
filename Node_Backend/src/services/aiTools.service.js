@@ -351,8 +351,39 @@ async function getMyRoom(user) {
 
 async function getMyBills(user, args = {}) {
   const resolved = await resolveCurrentRoom(user);
+  const limit = parseLimit(args.limit, 5, 20);
+  const monthRange = resolveMonthRange(args);
+  const status = normalizeEnum(args.status, BILL_STATUSES);
 
   if (!resolved.found) {
+    const legacyRoomNumber = String(resolved.user?.room_id || "").trim();
+
+    // Some legacy resident accounts still contain a room label instead of a
+    // Room ObjectId. We cannot safely attach bills without a real Room record,
+    // but a read-only bill query should return an empty result rather than look
+    // like an application failure.
+    if (legacyRoomNumber) {
+      return {
+        found: true,
+        roomLinked: false,
+        message: resolved.message,
+        roomNumber: legacyRoomNumber,
+        bills: [],
+        totalOutstanding: 0,
+        monthlySummary: {
+          year: monthRange.year,
+          month: monthRange.month,
+          label: monthRange.label,
+          count: 0,
+          totalAmount: 0,
+          paidAmount: 0,
+          unpaidAmount: 0,
+          overdueAmount: 0,
+          bills: [],
+        },
+      };
+    }
+
     return {
       found: false,
       message: resolved.message,
@@ -362,9 +393,6 @@ async function getMyBills(user, args = {}) {
     };
   }
 
-  const limit = parseLimit(args.limit, 5, 20);
-  const monthRange = resolveMonthRange(args);
-  const status = normalizeEnum(args.status, BILL_STATUSES);
   const roomFilter = { room_id: resolved.room._id };
   const statusFilter = status ? { status } : {};
 
