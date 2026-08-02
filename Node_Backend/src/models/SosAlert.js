@@ -11,6 +11,11 @@ const SosAlertSchema = new mongoose.Schema({
     ref: "Room",
   },
 
+  room_label: {
+    type: String,
+    trim: true,
+  },
+
   source: {
     type: String,
     trim: true,
