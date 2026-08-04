@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test test/*.test.js",
     "backfill:uids": "node scripts/backfill-uids.js",
     "export:ai-dataset": "node scripts/export-ai-finetune-dataset.js",
     "assign:rfid": "node scripts/assign-rfid-uid.js",

@@ -9,7 +9,7 @@ const { resolveCurrentRoom } = require("../services/aiTools.service");
 router.get("/profile", protect, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select(
-      "-password -otp -otpExpires -refreshTokens",
+      "-password -otp -otpExpires -otpPurpose -refreshTokens",
     );
 
     if (!user) {

@@ -126,6 +126,7 @@ The backend reads configuration from `Node_Backend/.env`. Do NOT commit secrets 
 - `JWT_SECRET` — JWT signing secret
 - `REFRESH_SECRET` — refresh token secret
 - `EMAIL_USER` / `EMAIL_PASS` — SMTP credentials for sending email
+- `GOOGLE_PLAY_REVIEWER_EMAIL` / `GOOGLE_PLAY_REVIEWER_PASSWORD` / `GOOGLE_PLAY_REVIEWER_OTP` — (optional overrides) dedicated Google Play reviewer credentials. They default to `reviewer@primecity.com`, `PrimeCityReviewer2026!`, and `123456`; overrides must be set together. Only the configured reviewer account uses these reusable credentials. All other accounts continue to use their database password and random expiring OTP.
 - `MQTT_URL`, `MQTT_USER`, `MQTT_PASS` — MQTT broker details
 - `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_MS` — (optional) AI integration
 - `OLLAMA_NUM_CTX`, `OLLAMA_NUM_PREDICT`, `OLLAMA_TEMPERATURE` — (optional) AI speed/quality tuning

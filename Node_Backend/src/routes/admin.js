@@ -4,10 +4,12 @@ const router = express.Router();
 const protect = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
 const User = require("../models/User");
+const PRIVATE_USER_FIELDS =
+  "-password -otp -otpExpires -otpPurpose -refreshTokens";
 
 router.get("/users", protect, authorizeRoles("Admin"), async (req, res) => {
   try {
-    const users = await User.find().select("-password");
+    const users = await User.find().select(PRIVATE_USER_FIELDS);
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -47,7 +49,7 @@ router.put(
       const user = await User.findByIdAndUpdate(
         req.params.id,
         { $set: updateFields },
-        { new: true, select: "-password" }
+        { new: true, select: PRIVATE_USER_FIELDS },
       );
 
       if (!user) return res.status(404).json({ message: "User not found" });
@@ -73,7 +75,8 @@ router.put(
       user.role = role;
       await user.save();
 
-      res.json({ message: "Role updated", user });
+      const safeUser = await User.findById(user._id).select(PRIVATE_USER_FIELDS);
+      res.json({ message: "Role updated", user: safeUser });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
