@@ -6,7 +6,4 @@ services:
       - "0.0.0.0:5001:5001"
     env_file:
       - ./Node_Backend/.env
-    volumes:
-      - ./Node_Backend:/app
-      - /app/node_modules
     restart: unless-stopped
