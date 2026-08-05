@@ -233,7 +233,7 @@ router.post("/login/step2", async (req, res) => {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
-    const authenticatedRole = getAuthenticatedRole(user, reviewerAccess);
+    const authenticatedRole = getAuthenticatedRole(user);
     const { accessToken, refreshToken } = generateTokens(
       user,
       authenticatedRole,
@@ -356,7 +356,7 @@ router.post("/refresh-token", async (req, res) => {
       return res.status(403).json({ message: "Invalid refresh token" });
     }
 
-    const authenticatedRole = getAuthenticatedRole(user, reviewerAccess);
+    const authenticatedRole = getAuthenticatedRole(user);
     const accessToken = jwt.sign(
       { id: user._id, role: authenticatedRole },
       process.env.JWT_SECRET,

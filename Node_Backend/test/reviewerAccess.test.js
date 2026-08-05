@@ -92,21 +92,19 @@ test("reusable password is accepted only for the configured reviewer account", (
   );
 });
 
-test("only the reviewer receives Admin dashboard access", () => {
-  const config = getReviewerAccessConfig({});
-
+test("reviewer authentication preserves the database role", () => {
   assert.equal(
-    getAuthenticatedRole(
-      { email: "reviewer@primecity.com", role: "Resident" },
-      config,
-    ),
-    "Admin",
+    getAuthenticatedRole({
+      email: "reviewer@primecity.com",
+      role: "Resident",
+    }),
+    "Resident",
   );
   assert.equal(
-    getAuthenticatedRole(
-      { email: "resident@primecity.com", role: "Resident" },
-      config,
-    ),
-    "Resident",
+    getAuthenticatedRole({
+      email: "admin@primecity.com",
+      role: "Admin",
+    }),
+    "Admin",
   );
 });

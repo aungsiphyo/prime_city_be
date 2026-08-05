@@ -89,8 +89,8 @@ function isReviewerPassword(email, password, config) {
   );
 }
 
-function getAuthenticatedRole(user, config) {
-  return isReviewerEmail(user?.email, config) ? "Admin" : user?.role;
+function getAuthenticatedRole(user) {
+  return user?.role;
 }
 
 module.exports = {
