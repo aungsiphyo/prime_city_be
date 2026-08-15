@@ -1,0 +1,8 @@
+{
+  "name": "getCurrentDateTime",
+  "description": "Get the current authoritative date, day, and time in the configured residential community timezone.",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}

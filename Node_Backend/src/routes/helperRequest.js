@@ -5,7 +5,8 @@ const HelperRequest = require("../models/HelperRequest");
 const Notification = require("../models/Notification");
 const User = require("../models/User");
 const Room = require("../models/Room");
-const optionalAuth = require("../middleware/optionalAuthMiddleware");
+const protect = require("../middleware/authMiddleware");
+const authorizeRoles = require("../middleware/roleMiddleware");
 const { sendPushToUsers } = require("../services/push.service");
 
 function getUserId(req) {
@@ -32,10 +33,10 @@ async function resolveRoomId(roomRef) {
 function emitNotificationToUser(app, userId, notification) {
   const io = app.get("io");
   const users = app.get("onlineUsers") || {};
-  const socketId = users[String(userId)];
+  const socketIds = users[String(userId)];
 
-  if (io && socketId) {
-    io.to(socketId).emit("notification", notification);
+  if (io && socketIds) {
+    io.to(Array.isArray(socketIds) ? socketIds : [socketIds]).emit("notification", notification);
   }
 }
 
@@ -43,20 +44,37 @@ async function getCurrentUser(req) {
   const currentUserId = getUserId(req);
   if (!currentUserId) return null;
 
-  return User.findById(currentUserId).select("_id fullname room_id").lean();
+  return User.findById(currentUserId)
+    .select("_id fullname role room_id")
+    .lean();
 }
 
-router.get("/", optionalAuth, async (req, res) => {
+async function getLinkedRoomId(user) {
+  if (!user) return null;
+
+  const explicitRoomId = await resolveRoomId(user.room_id);
+  if (explicitRoomId) return explicitRoomId;
+
+  const linkedRoom = await Room.findOne({ resident_id: user._id })
+    .select("_id")
+    .lean();
+  return linkedRoom ? String(linkedRoom._id) : null;
+}
+
+router.get("/", protect, async (req, res) => {
   try {
     const filter = {};
+    const currentUser = await getCurrentUser(req);
 
-    if (req.query.mine === "true") {
-      const currentUser = await getCurrentUser(req);
-      if (currentUser?.room_id) {
-        const roomId = await resolveRoomId(currentUser.room_id);
-        if (!roomId) return res.json([]);
-        filter.room_id = roomId;
-      }
+    if (!currentUser) {
+      return res.status(401).json({ success: false, message: "User not found" });
+    }
+
+    const isManager = ["Admin", "Staff"].includes(currentUser.role);
+    const mustUseOwnScope = req.query.mine === "true" || !isManager;
+
+    if (mustUseOwnScope) {
+      filter.requested_by = currentUser._id;
     }
 
     const requests = await HelperRequest.find(filter)
@@ -72,7 +90,7 @@ router.get("/", optionalAuth, async (req, res) => {
   }
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", protect, async (req, res) => {
   try {
     const request = await HelperRequest.findById(req.params.id)
       .populate("room_id")
@@ -84,17 +102,29 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ success: false, message: "Not found" });
     }
 
+    const currentUser = await getCurrentUser(req);
+    const isManager = ["Admin", "Staff"].includes(currentUser?.role);
+    const ownsRequest =
+      String(request.requested_by?._id || "") === String(currentUser?._id || "");
+
+    if (!isManager && !ownsRequest) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
     res.json(request);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-router.post("/", optionalAuth, async (req, res) => {
+router.post("/", protect, async (req, res) => {
   try {
     const currentUser = await getCurrentUser(req);
-    const roomRef = req.body.room_id || currentUser?.room_id;
-    const room_id = await resolveRoomId(roomRef);
+    const isManager = ["Admin", "Staff"].includes(currentUser?.role);
+    const ownRoomId = await getLinkedRoomId(currentUser);
+    const room_id = isManager
+      ? await resolveRoomId(req.body.room_id || ownRoomId)
+      : ownRoomId;
     const {
       helper_id,
       type,
@@ -102,7 +132,7 @@ router.post("/", optionalAuth, async (req, res) => {
       gender_preferred = "No Preference",
     } = req.body;
 
-    if (roomRef && !room_id) {
+    if (req.body.room_id && !room_id) {
       return res.status(400).json({
         success: false,
         message: "Room not found for room_id",
@@ -143,7 +173,11 @@ router.post("/", optionalAuth, async (req, res) => {
 
     if (recipientIds.length) {
       const title = "New helper request";
-      const message = `${type} helper request has been submitted.`;
+      const roomName =
+        populatedRequest.room_id?.room_name || String(room_id || "Unknown");
+      const residentName =
+        populatedRequest.requested_by?.fullname || currentUser?.fullname || "Resident";
+      const message = `${type} helper request from Room ${roomName} by ${residentName}.`;
       const notifications = await Notification.insertMany(
         recipientIds.map((userId) => ({
           user_id: userId,
@@ -153,8 +187,12 @@ router.post("/", optionalAuth, async (req, res) => {
           data: {
             helper_request_id: String(populatedRequest._id),
             room_id: String(room_id),
+            room_name: roomName,
+            resident_id: String(currentUser._id),
+            resident_name: residentName,
             helper_id: helper_id ? String(helper_id) : "",
             request_type: type,
+            note: note || "",
           },
         })),
       );
@@ -172,8 +210,12 @@ router.post("/", optionalAuth, async (req, res) => {
           data: {
             helper_request_id: String(populatedRequest._id),
             room_id: String(room_id),
+            room_name: roomName,
+            resident_id: String(currentUser._id),
+            resident_name: residentName,
             helper_id: helper_id ? String(helper_id) : "",
             request_type: type,
+            note: note || "",
           },
         },
         { channelId: "helper_requests" },
@@ -191,31 +233,36 @@ router.post("/", optionalAuth, async (req, res) => {
   }
 });
 
-router.put("/:id", async (req, res) => {
-  try {
-    const request = await HelperRequest.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true },
-    )
-      .populate("room_id")
-      .populate("helper_id", "fullname photo phone gender experience status")
-      .populate("requested_by", "fullname email phone");
+router.put(
+  "/:id",
+  protect,
+  authorizeRoles("Admin", "Staff"),
+  async (req, res) => {
+    try {
+      const request = await HelperRequest.findByIdAndUpdate(
+        req.params.id,
+        req.body,
+        { new: true },
+      )
+        .populate("room_id")
+        .populate("helper_id", "fullname photo phone gender experience status")
+        .populate("requested_by", "fullname email phone");
 
-    const io = req.app.get("io");
-    if (io) {
-      io.emit("helper_request", request);
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("helper_request", request);
+      }
+
+      res.json({
+        success: true,
+        message: "Request updated",
+        data: request,
+        request,
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
     }
-
-    res.json({
-      success: true,
-      message: "Request updated",
-      data: request,
-      request,
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
+  },
+);
 
 module.exports = router;

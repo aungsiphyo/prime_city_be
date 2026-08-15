@@ -1,0 +1,5 @@
+{
+  "name": "getResidentPopulation",
+  "description": "Get an aggregate count of PrimeCity residents and occupied rooms without exposing resident identities",
+  "parameters": { "type": "object", "properties": {} }
+}

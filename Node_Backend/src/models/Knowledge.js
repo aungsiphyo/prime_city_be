@@ -62,6 +62,24 @@ const knowledgeSchema = new mongoose.Schema(
       set: normalizeEnum,
       index: true,
     },
+    documentType: {
+      type: String,
+      enum: ["guide", "policy", "faq", "announcement", "service", "approved_feedback", "general"],
+      default: "general",
+      index: true,
+    },
+    source: {
+      type: String,
+      enum: ["manual", "system", "feedback_review", "announcement"],
+      default: "manual",
+      index: true,
+    },
+    sourceReference: { type: String, default: "", trim: true, maxlength: 200 },
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     content: {
       type: String,
       required: true,
@@ -98,6 +116,7 @@ knowledgeSchema.index(
     },
   },
 );
+knowledgeSchema.index({ audience: 1, category: 1, isActive: 1, updatedAt: -1 });
 
 const Knowledge = mongoose.model("Knowledge", knowledgeSchema);
 

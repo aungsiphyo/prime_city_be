@@ -33,6 +33,12 @@ const aiFeedbackSchema = new mongoose.Schema(
       type: Boolean,
       required: true,
     },
+    feedbackType: {
+      type: String,
+      enum: ["helpful", "not_helpful", "incorrect", "missing_information", "other"],
+      default: "not_helpful",
+      index: true,
+    },
     resolved: {
       type: Boolean,
       default: null,
@@ -53,6 +59,24 @@ const aiFeedbackSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    reviewStatus: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+      index: true,
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    reviewedAt: { type: Date, default: null },
+    reviewNote: { type: String, default: "", trim: true, maxlength: 1000 },
+    approvedKnowledgeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Knowledge",
+      default: null,
+    },
   },
   { timestamps: true },
 );
@@ -61,5 +85,6 @@ aiFeedbackSchema.index(
   { userId: 1, conversationId: 1, messageId: 1 },
   { unique: true },
 );
+aiFeedbackSchema.index({ reviewStatus: 1, createdAt: -1 });
 
 module.exports = mongoose.model("AiFeedback", aiFeedbackSchema);

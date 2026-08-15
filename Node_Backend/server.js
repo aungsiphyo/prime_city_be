@@ -8,6 +8,7 @@ const http = require("http");
 const os = require("os");
 const QRCode = require("qrcode");
 const { Server } = require("socket.io");
+const jwt = require("jsonwebtoken");
 const setupMQTT = require("./src/services/mqtt");
 
 const app = express();
@@ -243,8 +244,13 @@ const Room = require("./src/models/Room");
 
 app.get("/api/public/stats", async (req, res) => {
   try {
-    const activeResidents = await User.countDocuments({ role: "Citizen" });
-    const availableRooms = await Room.countDocuments({ resident_id: null });
+    const activeResidents = await User.countDocuments({
+      role: { $in: ["Resident", "Citizen"] },
+    });
+    const availableRooms = await Room.countDocuments({
+      status: "Available",
+      resident_id: null,
+    });
     res.json({ success: true, data: { activeResidents, availableRooms } });
   } catch (err) {
     console.error("Public stats error:", err);
@@ -270,6 +276,7 @@ app.use("/api/helpers", require("./src/routes/helper"));
 app.use("/api/bills", require("./src/routes/serviceBill"));
 app.use("/api/visitors", require("./src/routes/visitor"));
 app.use("/api/knowledge", require("./src/routes/knowledge.routes"));
+app.use("/api/audit-logs", require("./src/routes/audit.routes"));
 app.use("/api/ai", require("./src/routes/ai.routes"));
 app.use("/api/mcp", require("./src/routes/mcp.routes"));
 app.use("/api/rfid", require("./src/routes/rfid.routes"));
@@ -307,20 +314,40 @@ const io = new Server(server, {
 
 const onlineUsers = {};
 
+io.use((socket, next) => {
+  try {
+    const authToken =
+      socket.handshake.auth?.token ||
+      String(socket.handshake.headers?.authorization || "").replace(/^Bearer\s+/i, "");
+    if (!authToken) return next(new Error("Authentication required"));
+    const decoded = jwt.verify(authToken, process.env.JWT_SECRET);
+    socket.authenticatedUserId = String(decoded.id || decoded._id);
+    socket.authenticatedRole = decoded.role || null;
+    return next();
+  } catch (err) {
+    return next(new Error("Invalid authentication token"));
+  }
+});
+
 io.on("connection", (socket) => {
   console.log("⚡ Socket connected:", socket.id);
+  const userId = socket.authenticatedUserId;
+  onlineUsers[userId] = Array.from(
+    new Set([...(onlineUsers[userId] || []), socket.id]),
+  );
 
-  socket.on("register", (userId) => {
-    onlineUsers[userId] = socket.id;
+  socket.on("register", (_requestedUserId, acknowledge) => {
+    // Identity always comes from the verified token, never from client input.
+    acknowledge?.({ success: true, userId });
     console.log(`👤 User registered: ${userId} → ${socket.id}`);
   });
 
   socket.on("disconnect", () => {
-    const uid = Object.keys(onlineUsers).find(
-      (k) => onlineUsers[k] === socket.id,
+    const remaining = (onlineUsers[userId] || []).filter(
+      (socketId) => socketId !== socket.id,
     );
-
-    if (uid) delete onlineUsers[uid];
+    if (remaining.length) onlineUsers[userId] = remaining;
+    else delete onlineUsers[userId];
 
     console.log("❌ Socket disconnected:", socket.id);
   });
