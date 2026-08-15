@@ -1,4 +1,5 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const router = express.Router();
 const BillPaymentSubmission = require("../models/BillPaymentSubmission");
 const Notification = require("../models/Notification");
@@ -16,8 +17,13 @@ const {
   normalizeMoney,
 } = require("../services/billing.service");
 const { sendPushToUser } = require("../services/push.service");
+const {
+  buildRoomFinanceFields,
+  getMonthlyInstallment,
+} = require("../services/propertyFinance.service");
 
 const MANUAL_STATUS_FIELDS = new Set(["Pending", "Overdue"]);
+const PAYMENT_WINDOW_DAYS = 7;
 
 function getUserId(req) {
   return req.user?.id || req.user?._id;
@@ -27,7 +33,8 @@ function populateBillRoom(query) {
   return query
     .populate({
       path: "room_id",
-      select: "room_name building floor room_type status owner_name resident_id",
+      select:
+        "room_name building floor room_type status owner_name resident_id purchase_price down_payment_percent down_payment_amount financed_amount installment_months monthly_installment_amount installments_paid installment_remaining_amount installment_start_date installment_end_date installment_status",
       populate: {
         path: "resident_id",
         select: "fullname email phone role resident_uid",
@@ -50,11 +57,43 @@ function emitNotificationToUser(app, userId, notification) {
   }
 }
 
+async function emitBillUpdate(app, bill, residentId) {
+  const managers = await User.find({ role: { $in: ["Admin", "Staff"] } })
+    .select("_id")
+    .lean();
+  const recipients = [residentId, ...managers.map((item) => item._id)].filter(
+    Boolean,
+  );
+  const io = app.get("io");
+  const onlineUsers = app.get("onlineUsers") || {};
+
+  recipients.forEach((userId) => {
+    const socketIds = onlineUsers[String(userId)];
+    if (io && socketIds) {
+      io.to(Array.isArray(socketIds) ? socketIds : [socketIds]).emit(
+        "bill_update",
+        bill,
+      );
+    }
+  });
+}
+
 function serializePayment(submission) {
   if (!submission) return null;
   return {
     ...submission,
     proof_url: `/bill-payments/${submission._id}/proof`,
+  };
+}
+
+function enrichBillRoomFinance(bill) {
+  if (!bill?.room_id || typeof bill.room_id !== "object") return bill;
+  return {
+    ...bill,
+    room_id: {
+      ...bill.room_id,
+      ...buildRoomFinanceFields(bill.room_id.room_type, bill.room_id),
+    },
   };
 }
 
@@ -78,7 +117,7 @@ async function attachLatestPayments(bills, currentUser) {
   });
 
   return bills.map((bill) => ({
-    ...bill,
+    ...enrichBillRoomFinance(bill),
     latest_payment: serializePayment(latestByBill.get(String(bill._id))),
   }));
 }
@@ -94,6 +133,18 @@ function parseDate(value, fieldName) {
 }
 
 function buildBillPayload(body, room, existingBill = null) {
+  const hasMonthlyPeriod = Boolean(
+    body.billing_month ||
+      body.billing_year ||
+      existingBill?.billing_month ||
+      existingBill?.billing_year,
+  );
+  if (hasMonthlyPeriod && room?.room_type) {
+    body = {
+      ...body,
+      installment_amount: getMonthlyInstallment(room),
+    };
+  }
   const payload = {};
   const hasAnyComponentField = COMPONENT_FIELDS.some((field) =>
     Object.prototype.hasOwnProperty.call(body, field),
@@ -134,13 +185,18 @@ function buildBillPayload(body, room, existingBill = null) {
     error.status = 400;
     throw error;
   }
-  if (Object.prototype.hasOwnProperty.call(body, "due_date")) {
+  if (!existingBill) {
+    payload.due_date = new Date(
+      Date.now() + PAYMENT_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    );
+  } else if (Object.prototype.hasOwnProperty.call(body, "due_date")) {
     payload.due_date = parseDate(body.due_date, "due_date");
-  } else if (!existingBill) {
-    const error = new Error("due_date is required");
-    error.status = 400;
-    throw error;
   }
+  const effectiveDueDate = payload.due_date || existingBill?.due_date;
+  payload.payment_window_days = PAYMENT_WINDOW_DAYS;
+  payload.service_cutoff_warning = `Pay within ${PAYMENT_WINDOW_DAYS} days. Electricity and water services may be suspended after ${new Date(
+    effectiveDueDate,
+  ).toLocaleDateString("en-GB")} if this bill remains unpaid.`;
 
   const month = Object.prototype.hasOwnProperty.call(body, "billing_month")
     ? Number(body.billing_month)
@@ -216,15 +272,122 @@ async function notifyResidentOfBill(app, bill, residentId) {
 router.get("/admin/rooms", protect, authorizeRoles("Admin", "Staff"), async (_req, res) => {
   try {
     const rooms = await Room.find({ resident_id: { $ne: null } })
-      .select("room_name building floor room_type status resident_id")
+      .select(
+        "room_name building floor room_type status resident_id purchase_price down_payment_percent down_payment_amount financed_amount installment_months monthly_installment_amount installments_paid installment_remaining_amount installment_start_date installment_end_date installment_status",
+      )
       .populate("resident_id", "fullname email phone resident_uid")
       .sort({ building: 1, floor: 1, room_name: 1 })
       .lean();
-    return res.json({ success: true, data: rooms });
+    const data = rooms.map((room) => ({
+      ...room,
+      ...buildRoomFinanceFields(room.room_type, room),
+    }));
+    return res.json({ success: true, data });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
 });
+
+router.post(
+  "/bulk",
+  protect,
+  authorizeRoles("Admin", "Staff"),
+  async (req, res) => {
+    const session = await mongoose.startSession();
+    try {
+      const month = Number(req.body.billing_month);
+      const year = Number(req.body.billing_year);
+      if (!Number.isInteger(month) || !Number.isInteger(year)) {
+        return res.status(400).json({
+          success: false,
+          message: "billing_month and billing_year are required",
+        });
+      }
+
+      const rooms = await Room.find({ resident_id: { $ne: null } })
+        .select(
+          "_id room_name room_type resident_id monthly_installment_amount installments_paid installment_status",
+        )
+        .lean();
+      if (!rooms.length) {
+        return res.status(404).json({
+          success: false,
+          message: "No occupied resident rooms were found",
+        });
+      }
+
+      const billingKeys = rooms.map((room) =>
+        buildBillingKey(room._id, year, month),
+      );
+      const existing = await ServiceBill.find({
+        billing_key: { $in: billingKeys },
+      })
+        .select("billing_key")
+        .lean();
+      const existingKeys = new Set(existing.map((item) => item.billing_key));
+      const pendingRooms = rooms.filter(
+        (room) => !existingKeys.has(buildBillingKey(room._id, year, month)),
+      );
+      const documents = pendingRooms.map((room) => ({
+        ...buildBillPayload(req.body, room),
+        room_id: room._id,
+        resident_user_id: room.resident_id,
+        created_by: getUserId(req),
+        status: "Pending",
+      }));
+
+      let created = [];
+      await session.withTransaction(async () => {
+        if (documents.length) {
+          created = await ServiceBill.insertMany(documents, { session });
+        }
+      });
+      const populatedBillsRaw = await populateBillRoom(
+        ServiceBill.find({ _id: { $in: created.map((item) => item._id) } }),
+      ).lean();
+      const populatedBills = populatedBillsRaw.map(enrichBillRoomFinance);
+      await Promise.allSettled(
+        populatedBills.map(async (bill) => {
+          const residentId = bill.room_id?.resident_id?._id;
+          await emitBillUpdate(req.app, bill, residentId);
+          await notifyResidentOfBill(req.app, bill, residentId);
+        }),
+      );
+      await recordAdminAudit({
+        adminUserId: getUserId(req),
+        action: "monthly_bills_bulk_created",
+        entityType: "ServiceBill",
+        entityId: created[0]?._id,
+        metadata: {
+          billingMonth: month,
+          billingYear: year,
+          createdCount: created.length,
+          skippedCount: rooms.length - created.length,
+        },
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: `${created.length} monthly bills created`,
+        created_count: created.length,
+        skipped_count: rooms.length - created.length,
+        bills: populatedBills,
+      });
+    } catch (err) {
+      if (err.code === 11000) {
+        return res.status(409).json({
+          success: false,
+          message: "A monthly bill already exists for one or more selected rooms",
+        });
+      }
+      return res
+        .status(err.status || 500)
+        .json({ success: false, message: err.message });
+    } finally {
+      await session.endSession();
+    }
+  },
+);
 
 router.get("/", protect, async (req, res) => {
   try {
@@ -299,7 +462,9 @@ router.get("/:id", protect, async (req, res) => {
 router.post("/", protect, authorizeRoles("Admin", "Staff"), async (req, res) => {
   try {
     const room = await Room.findById(req.body.room_id)
-      .select("_id room_name resident_id")
+      .select(
+        "_id room_name room_type resident_id monthly_installment_amount installments_paid installment_status",
+      )
       .lean();
     if (!room) {
       return res.status(400).json({
@@ -316,12 +481,12 @@ router.post("/", protect, authorizeRoles("Admin", "Staff"), async (req, res) => 
       created_by: getUserId(req),
       status: "Pending",
     });
-    const populatedBill = await populateBillRoom(
+    const populatedBillRaw = await populateBillRoom(
       ServiceBill.findById(bill._id),
     ).lean();
+    const populatedBill = enrichBillRoomFinance(populatedBillRaw);
 
-    const io = req.app.get("io");
-    if (io) io.emit("bill_update", populatedBill);
+    await emitBillUpdate(req.app, populatedBill, room.resident_id);
 
     let notificationDelivery = { success: true };
     try {
@@ -379,7 +544,9 @@ router.put("/:id", protect, authorizeRoles("Admin", "Staff"), async (req, res) =
       });
     }
     const room = await Room.findById(existingBill.room_id)
-      .select("_id resident_id")
+      .select(
+        "_id room_type resident_id monthly_installment_amount installments_paid installment_status",
+      )
       .lean();
     if (!room) {
       return res.status(409).json({
@@ -394,12 +561,12 @@ router.put("/:id", protect, authorizeRoles("Admin", "Staff"), async (req, res) =
     });
     await existingBill.save();
 
-    const populatedBill = await populateBillRoom(
+    const populatedBillRaw = await populateBillRoom(
       ServiceBill.findById(existingBill._id),
     ).lean();
+    const populatedBill = enrichBillRoomFinance(populatedBillRaw);
 
-    const io = req.app.get("io");
-    if (io) io.emit("bill_update", populatedBill);
+    await emitBillUpdate(req.app, populatedBill, room.resident_id);
 
     await recordAdminAudit({
       adminUserId: getUserId(req),

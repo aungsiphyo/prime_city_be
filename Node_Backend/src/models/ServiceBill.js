@@ -26,6 +26,14 @@ const ServiceBillSchema = new mongoose.Schema(
     service_amount: { type: Number, min: 0, default: 0 },
     other_amount: { type: Number, min: 0, default: 0 },
     other_description: { type: String, trim: true, maxlength: 240, default: "" },
+    payment_window_days: { type: Number, min: 1, max: 31, default: 7 },
+    service_cutoff_warning: {
+      type: String,
+      trim: true,
+      default:
+        "Pay within 7 days. Electricity and water services may be suspended after the due date if this bill remains unpaid.",
+    },
+    installment_applied: { type: Boolean, default: false },
     amount: { type: Number, required: true, min: 0 },
     status: {
       type: String,
