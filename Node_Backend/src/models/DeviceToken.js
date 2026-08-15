@@ -36,4 +36,6 @@ const DeviceTokenSchema = new mongoose.Schema({
   },
 });
 
+DeviceTokenSchema.index({ user_id: 1, last_seen_at: -1 });
+
 module.exports = mongoose.model("DeviceToken", DeviceTokenSchema);

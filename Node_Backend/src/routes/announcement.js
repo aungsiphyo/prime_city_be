@@ -13,10 +13,10 @@ function getUserId(req) {
 function emitNotificationToUser(app, userId, notification) {
   const io = app.get("io");
   const users = app.get("onlineUsers") || {};
-  const socketId = users[String(userId)];
+  const socketIds = users[String(userId)];
 
-  if (io && socketId) {
-    io.to(socketId).emit("notification", notification);
+  if (io && socketIds) {
+    io.to(Array.isArray(socketIds) ? socketIds : [socketIds]).emit("notification", notification);
   }
 }
 

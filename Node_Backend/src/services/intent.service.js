@@ -5,6 +5,8 @@ const TOOL_INTENTS = new Set([
   "getSOSAlerts",
   "getLatestRfidScans",
   "getMyRoom",
+  "getRoomAvailability",
+  "getCurrentDateTime",
   "getMyBills",
   "getMyVisitors",
   "createMaintenanceRequest",
@@ -12,6 +14,9 @@ const TOOL_INTENTS = new Set([
   "createHelperRequest",
   "getAnnouncements",
   "getResidentAccessInfo",
+  "getAdminContact",
+  "getResidentPopulation",
+  "getWeather",
   "registerVisitor",
   "reserveVisitorParking",
   "reportLostCard",
@@ -121,6 +126,61 @@ function classifyIntent(message) {
     hasAny(text, ["အရေးပေါ်", "ကယ်ပါ", "မီးလောင်", "ဆေးရုံ", "ambulance"])
   ) {
     return { name: "emergency", confidence: 1, toolName: null };
+  }
+
+  if (
+    hasAny(text, ["weather", "forecast", "temperature", "rain", "မိုးလေဝသ", "ရာသီဥတု", "ရာသီ ဥတု", "မိုးရွာ", "အပူချိန်"])
+  ) {
+    return { name: "getWeather", confidence: 0.99, toolName: "getWeather" };
+  }
+
+  if (
+    hasAny(text, ["admin", "management", "စီမံ", "အက်ဒမင်", "admin ကို", "admin နဲ့"]) &&
+    hasAny(text, ["contact", "phone", "call", "ဖုန်း", "ဆက်သွယ်", "တိုက်ရိုက်"])
+  ) {
+    return {
+      name: "getAdminContact",
+      confidence: 1,
+      toolName: "getAdminContact",
+    };
+  }
+
+  if (
+    hasAny(text, ["resident", "residents", "population", "နေထိုင်သူ", "လူဦးရေ", "လူဦးရေ"]) &&
+    hasAny(text, ["count", "how many", "total", "ဘယ်နှစ်", "ဘယ်လောက်", "ဦးရေ", "ဦးရေ"])
+  ) {
+    return {
+      name: "getResidentPopulation",
+      confidence: 0.98,
+      toolName: "getResidentPopulation",
+    };
+  }
+
+  if (
+    hasAny(text, [
+      "current date",
+      "today's date",
+      "todays date",
+      "current time",
+      "what time",
+      "what day",
+      "date today",
+      "ဒီနေ့",
+      "ယနေ့",
+      "နေ့စွဲ",
+      "ရက်စွဲ",
+      "အချိန်",
+      "နာရီ",
+      "ဘယ်နေ့",
+      "ဘယ်ရက်",
+      "ဘယ်အချိန်",
+    ])
+  ) {
+    return {
+      name: "getCurrentDateTime",
+      confidence: 0.99,
+      toolName: "getCurrentDateTime",
+    };
   }
 
   if (
@@ -359,6 +419,35 @@ function classifyIntent(message) {
       args: {
         today: hasAny(text, ["today", "ဒီနေ့", "ယနေ့"]),
       },
+    };
+  }
+
+  const asksAboutRooms = hasAny(text, [
+    "room",
+    "rooms",
+    "apartment",
+    "apartments",
+    "အခန်း",
+    "တိုက်ခန်း",
+  ]);
+  const asksRoomAvailability = hasAny(text, [
+    "available",
+    "availability",
+    "remaining",
+    "left",
+    "how many",
+    "ကျန်",
+    "လွတ်",
+    "ဘယ်နှစ်",
+    "ဘယ်လောက်",
+  ]);
+
+  if (asksAboutRooms && asksRoomAvailability) {
+    return {
+      name: "getRoomAvailability",
+      confidence: 0.98,
+      toolName: "getRoomAvailability",
+      args: { detail: "summary" },
     };
   }
 

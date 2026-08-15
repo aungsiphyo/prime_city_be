@@ -1,0 +1,14 @@
+{
+  "name": "getRoomAvailability",
+  "description": "Get the current room inventory summary, including total, available, occupied, and maintenance room counts. Admin and staff users can receive all room records; residents receive availability data only.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "detail": {
+        "type": "string",
+        "enum": ["summary", "list"],
+        "description": "Whether the user is asking for a count summary or room list."
+      }
+    }
+  }
+}

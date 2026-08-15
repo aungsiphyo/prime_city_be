@@ -45,6 +45,18 @@ function getCredential(admin) {
     return admin.credential.applicationDefault();
   }
 
+  if (
+    process.env.FIREBASE_PROJECT_ID &&
+    process.env.FIREBASE_CLIENT_EMAIL &&
+    process.env.FIREBASE_PRIVATE_KEY
+  ) {
+    return admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID.trim(),
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL.trim(),
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+    });
+  }
+
   return null;
 }
 
@@ -67,7 +79,12 @@ function ensureFirebase() {
     }
 
     if (!admin.apps.length) {
-      admin.initializeApp({ credential });
+      admin.initializeApp({
+        credential,
+        ...(process.env.FIREBASE_PROJECT_ID
+          ? { projectId: process.env.FIREBASE_PROJECT_ID.trim() }
+          : {}),
+      });
     }
 
     firebaseReady = true;

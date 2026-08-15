@@ -1,4 +1,9 @@
 const Knowledge = require("../models/Knowledge");
+const { recordAdminAudit } = require("../services/audit.service");
+
+function getUserId(user) {
+  return user?.id || user?._id || null;
+}
 
 const CATEGORY_VALUES = Knowledge.CATEGORY_VALUES;
 const AUDIENCE_VALUES = Knowledge.AUDIENCE_VALUES;
@@ -225,6 +230,13 @@ async function createKnowledge(req, res) {
 
   try {
     const doc = await Knowledge.create(payload);
+    await recordAdminAudit({
+      adminUserId: getUserId(req.user),
+      action: "knowledge_created",
+      entityType: "Knowledge",
+      entityId: doc._id,
+      metadata: { category: doc.category, audience: doc.audience },
+    });
 
     return res.status(201).json({
       success: true,
@@ -261,6 +273,14 @@ async function updateKnowledge(req, res) {
       });
     }
 
+    await recordAdminAudit({
+      adminUserId: getUserId(req.user),
+      action: "knowledge_updated",
+      entityType: "Knowledge",
+      entityId: doc._id,
+      metadata: { category: doc.category, audience: doc.audience },
+    });
+
     return res.json({
       success: true,
       data: doc,
@@ -287,6 +307,13 @@ async function deleteKnowledge(req, res) {
         message: "Knowledge item not found",
       });
     }
+
+    await recordAdminAudit({
+      adminUserId: getUserId(req.user),
+      action: "knowledge_deactivated",
+      entityType: "Knowledge",
+      entityId: doc._id,
+    });
 
     return res.json({
       success: true,

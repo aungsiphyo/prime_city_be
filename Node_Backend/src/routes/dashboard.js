@@ -12,8 +12,10 @@ const Parking = require("../models/Parking");
 
 router.get("/stats", protect, authorizeRoles("Admin", "Staff"), async (req, res) => {
   try {
-    // 1. Residents Count (Role: Citizen)
-    const residentsCount = await User.countDocuments({ role: "Citizen" });
+    // 1. Residents Count (include legacy Citizen records)
+    const residentsCount = await User.countDocuments({
+      role: { $in: ["Resident", "Citizen"] },
+    });
 
     // 2. Rooms Available (resident_id is null)
     const roomsAvailCount = await Room.countDocuments({ resident_id: null });

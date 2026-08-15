@@ -23,6 +23,7 @@ const HELPER_GENDER_PREFERENCES = new Set([
 
 const RESIDENT_ACCESS_ITEMS = [
   "View own room information",
+  "View current room availability and remaining apartment count",
   "View own service bills, unpaid total, and monthly bill total",
   "View own visitor records",
   "View community announcements and own notifications",
@@ -67,6 +68,8 @@ function sumAmounts(items) {
 function mapBill(bill) {
   return {
     id: String(bill._id),
+    title: bill.title || "Service bill",
+    type: bill.type || "General",
     amount: bill.amount,
     status: bill.status,
     dueDate: bill.due_date,
@@ -262,9 +265,14 @@ async function getRecentParkingEvents(args = {}) {
   };
 }
 
-async function getSOSAlerts(args = {}) {
+async function getSOSAlerts(args = {}, user) {
   const limit = Math.min(Math.max(Number(args.limit || 5), 1), 20);
   const filter = {};
+  const currentUser = await getCurrentUser(user);
+  const isManager = ["Admin", "Staff", "Security"].includes(currentUser?.role);
+
+  if (!currentUser) return { count: 0, alerts: [], message: "Login required" };
+  if (!isManager) filter.resident_id = currentUser._id;
 
   if (args.status) filter.status = args.status;
 
@@ -293,9 +301,14 @@ async function getSOSAlerts(args = {}) {
   };
 }
 
-async function getLatestRfidScans(args = {}) {
+async function getLatestRfidScans(args = {}, user) {
   const limit = Math.min(Math.max(Number(args.limit || 5), 1), 20);
   const filter = {};
+  const currentUser = await getCurrentUser(user);
+  const isManager = ["Admin", "Staff", "Security"].includes(currentUser?.role);
+
+  if (!currentUser) return { count: 0, scans: [], message: "Login required" };
+  if (!isManager) filter.resident_id = currentUser._id;
 
   if (args.valid === true || args.valid === false) filter.valid = args.valid;
   if (args.personType) filter.personType = args.personType;
@@ -346,6 +359,80 @@ async function getMyRoom(user) {
     roomType: resolved.room.room_type,
     status: resolved.room.status,
     residentId: resolved.room.resident_id || resolved.user._id,
+  };
+}
+
+async function getRoomAvailability(args = {}, user) {
+  const currentUser = await getCurrentUser(user);
+  const isManager = ["Admin", "Staff"].includes(currentUser?.role);
+  const rooms = await Room.find({})
+    .sort({ building: 1, floor: 1, room_name: 1 })
+    .populate("resident_id", "fullname role resident_uid")
+    .lean();
+  const available = rooms.filter(
+    (room) => room.status === "Available" && !room.resident_id,
+  );
+  const maintenance = rooms.filter((room) => room.status === "Maintenance");
+  const occupied = rooms.filter(
+    (room) => room.status === "Occupied" || Boolean(room.resident_id),
+  );
+  const mapRoom = (room) => ({
+    id: String(room._id),
+    roomNumber: room.room_name,
+    building: room.building,
+    floor: room.floor,
+    roomType: room.room_type,
+    status: room.status,
+    ...(isManager
+      ? {
+          ownerName: room.owner_name || room.resident_id?.fullname || "",
+          residentName: room.resident_id?.fullname || null,
+          residentId: room.resident_id?._id
+            ? String(room.resident_id._id)
+            : null,
+        }
+      : {}),
+  });
+
+  return {
+    totalRooms: rooms.length,
+    availableCount: available.length,
+    occupiedCount: occupied.length,
+    maintenanceCount: maintenance.length,
+    availableRooms: available.map(mapRoom),
+    rooms: isManager ? rooms.map(mapRoom) : available.map(mapRoom),
+    scope: isManager ? "all_rooms" : "availability_only",
+    requestedDetail: args.detail || "summary",
+  };
+}
+
+function getCurrentDateTime() {
+  const now = new Date();
+  const timeZone = process.env.AI_TIME_ZONE || "Asia/Yangon";
+  const dateFormatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  const weekdayFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "long",
+  });
+
+  return {
+    iso: now.toISOString(),
+    timeZone,
+    localDate: dateFormatter.format(now),
+    localTime: timeFormatter.format(now),
+    weekday: weekdayFormatter.format(now),
   };
 }
 
@@ -447,7 +534,10 @@ async function getMyVisitors(user, args = {}) {
     };
   }
 
-  const filter = { target_room_id: resolved.room._id };
+  const filter = {
+    target_room_id: resolved.room._id,
+    registered_by: resolved.user._id,
+  };
 
   if (args.today) {
     const start = new Date();
@@ -571,6 +661,7 @@ async function createHelperRequest(args = {}, user) {
   const requestType = normalizeHelperType(args.type || args.serviceType);
   const genderPreferred = normalizeGenderPreference(args.gender_preferred);
   const request = await HelperRequest.create({
+    requested_by: resolved.user._id,
     room_id: resolved.room._id,
     type: requestType,
     gender_preferred: genderPreferred,
@@ -675,6 +766,7 @@ async function registerVisitor(args = {}, user) {
     purposeDetail: visitDate && visitTime ? `${visitDate} ${visitTime}` : "",
     hostName: resolved.user.fullname || "Resident",
     agreedToTerms: true,
+    registered_by: resolved.user._id,
     target_room_id: resolved.room._id,
   });
 
@@ -858,12 +950,129 @@ async function getResidentAccessInfo(user) {
   const currentUser = await getCurrentUser(user);
 
   return {
-    role: currentUser?.role || user?.role || "Citizen",
+    role: currentUser?.role || user?.role || "Resident",
     isLoggedIn: Boolean(currentUser || getUserId(user)),
     permissions: RESIDENT_ACCESS_ITEMS,
     privacyNote:
       "Resident data is limited to the logged-in user's linked room/account where applicable.",
   };
+}
+
+function getAdminContact() {
+  const configured = String(
+    process.env.ADMIN_CONTACT_PHONES || "09455507081,09965139303",
+  )
+    .split(/[,/]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return {
+    phones: configured,
+    message: "PrimeCity admin contact numbers",
+  };
+}
+
+async function getResidentPopulation() {
+  const [residentCount, occupiedRoomCount] = await Promise.all([
+    User.countDocuments({ role: { $in: ["Resident", "Citizen"] } }),
+    Room.countDocuments({
+      $or: [{ status: "Occupied" }, { resident_id: { $ne: null } }],
+    }),
+  ]);
+
+  return {
+    residentCount,
+    occupiedRoomCount,
+    scope: "aggregate_only",
+    privacyNote: "No resident names or personal records are included.",
+  };
+}
+
+function describeWeatherCode(code) {
+  if (code === 0) return "ကြည်လင်";
+  if ([1, 2, 3].includes(code)) return "တိမ်အသင့်အတင့်";
+  if ([45, 48].includes(code)) return "မြူထူ";
+  if ([51, 53, 55, 56, 57].includes(code)) return "မိုးဖွဲ";
+  if ([61, 63, 65, 66, 67].includes(code)) return "မိုးရွာ";
+  if ([71, 73, 75, 77].includes(code)) return "နှင်းကျ";
+  if ([80, 81, 82].includes(code)) return "မိုးတိမ်တောင်";
+  if ([85, 86].includes(code)) return "နှင်းတိမ်တောင်";
+  if ([95, 96, 99].includes(code)) return "မိုးကြိုးမုန်တိုင်း";
+  return "ရာသီဥတုအခြေအနေ မသတ်မှတ်နိုင်";
+}
+
+async function getWeather() {
+  const latitude = Number(process.env.WEATHER_LATITUDE || 16.8661);
+  const longitude = Number(process.env.WEATHER_LONGITUDE || 96.1951);
+  const locationName = process.env.WEATHER_LOCATION_NAME || "Yangon";
+  const timeZone = process.env.WEATHER_TIMEZONE || "Asia/Yangon";
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+    current:
+      "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m",
+    daily:
+      "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+    timezone: timeZone,
+    forecast_days: "3",
+  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch(
+      `https://api.open-meteo.com/v1/forecast?${params.toString()}`,
+      { signal: controller.signal },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Weather service returned HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const current = data.current || {};
+    const daily = data.daily || {};
+
+    return {
+      available: true,
+      source: "Open-Meteo",
+      locationName,
+      latitude,
+      longitude,
+      timeZone: data.timezone || timeZone,
+      observedAt: current.time || null,
+      current: {
+        temperatureC: current.temperature_2m,
+        apparentTemperatureC: current.apparent_temperature,
+        humidityPercent: current.relative_humidity_2m,
+        precipitationMm: current.precipitation,
+        rainMm: current.rain,
+        windSpeedKmh: current.wind_speed_10m,
+        weatherCode: current.weather_code,
+        description: describeWeatherCode(current.weather_code),
+      },
+      forecast: (daily.time || []).map((date, index) => ({
+        date,
+        description: describeWeatherCode(daily.weather_code?.[index]),
+        maxTemperatureC: daily.temperature_2m_max?.[index],
+        minTemperatureC: daily.temperature_2m_min?.[index],
+        precipitationProbabilityPercent:
+          daily.precipitation_probability_max?.[index],
+      })),
+    };
+  } catch (err) {
+    return {
+      available: false,
+      source: "Open-Meteo",
+      locationName,
+      message:
+        err.name === "AbortError"
+          ? "Weather service timed out"
+          : err.message || "Weather service unavailable",
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function runTool(name, args = {}, user) {
@@ -878,13 +1087,19 @@ async function runTool(name, args = {}, user) {
       return getRecentParkingEvents(args);
 
     case "getSOSAlerts":
-      return getSOSAlerts(args);
+      return getSOSAlerts(args, user);
 
     case "getLatestRfidScans":
-      return getLatestRfidScans(args);
+      return getLatestRfidScans(args, user);
 
     case "getMyRoom":
       return getMyRoom(user);
+
+    case "getRoomAvailability":
+      return getRoomAvailability(args, user);
+
+    case "getCurrentDateTime":
+      return getCurrentDateTime();
 
     case "getMyBills":
       return getMyBills(user, args);
@@ -906,6 +1121,15 @@ async function runTool(name, args = {}, user) {
 
     case "getResidentAccessInfo":
       return getResidentAccessInfo(user);
+
+    case "getAdminContact":
+      return getAdminContact();
+
+    case "getResidentPopulation":
+      return getResidentPopulation();
+
+    case "getWeather":
+      return getWeather();
 
     case "registerVisitor":
       return registerVisitor(args, user);
@@ -931,6 +1155,13 @@ module.exports = {
   runTool,
   resolveCurrentRoom,
   getMyProfile,
+  getRoomAvailability,
+  getCurrentDateTime,
+  getMyBills,
+  getMyVisitors,
+  getResidentPopulation,
+  getAdminContact,
+  getWeather,
   registerVisitor,
   reserveVisitorParking,
   reportLostCard,

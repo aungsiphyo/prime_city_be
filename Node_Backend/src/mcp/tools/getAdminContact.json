@@ -1,0 +1,5 @@
+{
+  "name": "getAdminContact",
+  "description": "Get the public PrimeCity administration phone numbers when a user asks to contact management directly",
+  "parameters": { "type": "object", "properties": {} }
+}

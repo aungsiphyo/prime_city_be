@@ -41,6 +41,12 @@ const VisitorSchema = new mongoose.Schema(
       ref: "Room",
       default: null,
     },
+    registered_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
 
     purpose: {
       type: String,
@@ -102,5 +108,8 @@ VisitorSchema.pre("save", function () {
     this.badgeNumber = `${prefix}-${uniqueSuffix}`;
   }
 });
+
+VisitorSchema.index({ registered_by: 1, createdAt: -1 });
+VisitorSchema.index({ target_room_id: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Visitor", VisitorSchema);

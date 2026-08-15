@@ -1,7 +1,14 @@
 const aiService = require("../services/ai.service");
 const AiChat = require("../models/AiChat");
 const AiFeedback = require("../models/AiFeedback");
+const AiUserMemory = require("../models/AiUserMemory");
+const Knowledge = require("../models/Knowledge");
 const User = require("../models/User");
+const {
+  retrievePersonalFeedbackContext,
+  retrieveRelevantPersonalHistory,
+} = require("../services/rag.service");
+const { recordAdminAudit } = require("../services/audit.service");
 
 function getUserId(user) {
   return user?.id || user?._id || null;
@@ -79,6 +86,13 @@ function validateFeedbackBody(body) {
     errors.push("appVersion must be a string when provided");
   }
 
+  if (
+    body.feedbackType != null &&
+    !["helpful", "not_helpful", "incorrect", "missing_information", "other"].includes(body.feedbackType)
+  ) {
+    errors.push("feedbackType is invalid");
+  }
+
   return errors;
 }
 
@@ -120,8 +134,7 @@ async function postChat(req, res) {
       });
     }
 
-    const { message, conversationId, history, enableRag, ragContext } =
-      req.body;
+    const { message, conversationId, enableRag } = req.body;
     const userId = getUserId(req.user);
     const currentUser = await User.findById(userId)
       .select("_id fullname role room_id resident_uid")
@@ -134,13 +147,52 @@ async function postChat(req, res) {
       });
     }
 
+    const detectedHonorific = message.includes("ခင်ဗျာ")
+      ? "khinbya"
+      : message.includes("ရှင်")
+        ? "shin"
+        : null;
+    let memory = await AiUserMemory.findOne({ userId }).lean();
+
+    if (!memory || (memory.honorific === "neutral" && detectedHonorific)) {
+      memory = await AiUserMemory.findOneAndUpdate(
+        { userId },
+        {
+          $setOnInsert: { userId },
+          ...(detectedHonorific ? { $set: { honorific: detectedHonorific } } : {}),
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true },
+      ).lean();
+    }
+
+    // History is loaded by authenticated user + conversation on the server.
+    // Client-supplied history is never trusted as a source of identity or data.
+    const serverHistory = conversationId
+      ? await AiChat.find({ userId, conversationId: String(conversationId) })
+          .sort({ createdAt: -1 })
+          .limit(30)
+          .lean()
+      : [];
+    serverHistory.reverse();
+    const [personalFeedbackContext, relevantPersonalHistory] = enableRag === false
+      ? ["", ""]
+      : await Promise.all([
+          retrievePersonalFeedbackContext(message, userId).catch(() => ""),
+          retrieveRelevantPersonalHistory(message, userId, {
+            excludeConversationId: conversationId,
+          }).catch(() => ""),
+        ]);
+
     const result = await aiService.chat({
       message,
       conversationId,
-      history,
+      history: serverHistory,
       user: currentUser,
       enableRag: enableRag !== false,
-      audienceHint: ragContext,
+      audienceHint: currentUser.role,
+      honorific: memory?.honorific || "neutral",
+      personalFeedbackContext,
+      relevantPersonalHistory,
     });
 
     await persistChatTurn(currentUser, result);
@@ -211,6 +263,8 @@ async function postFeedback(req, res) {
           aiChatId: chatMessage._id,
           rating,
           helpful,
+          feedbackType:
+            req.body.feedbackType || (rating > 0 ? "helpful" : "not_helpful"),
           resolved:
             typeof req.body.resolved === "boolean" ? req.body.resolved : null,
           comment: req.body.comment ? req.body.comment.trim() : "",
@@ -234,6 +288,8 @@ async function postFeedback(req, res) {
         messageId: feedback.messageId,
         rating: feedback.rating,
         helpful: feedback.helpful,
+        feedbackType: feedback.feedbackType,
+        reviewStatus: feedback.reviewStatus,
         resolved: feedback.resolved,
         comment: feedback.comment,
         createdAt: feedback.createdAt,
@@ -257,37 +313,160 @@ async function postFeedback(req, res) {
   }
 }
 
+async function listFeedbackForReview(req, res) {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+    const filter = {};
+    if (["pending", "approved", "rejected"].includes(req.query.status)) {
+      filter.reviewStatus = req.query.status;
+    }
+    const [items, total] = await Promise.all([
+      AiFeedback.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate("userId", "fullname role")
+        .populate("aiChatId", "content intent model createdAt")
+        .lean(),
+      AiFeedback.countDocuments(filter),
+    ]);
+
+    return res.json({
+      success: true,
+      data: items,
+      pagination: { total, page, pages: Math.max(1, Math.ceil(total / limit)) },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+async function reviewFeedback(req, res) {
+  try {
+    const reviewStatus = String(req.body.reviewStatus || "").trim().toLowerCase();
+    if (!["approved", "rejected"].includes(reviewStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "reviewStatus must be approved or rejected",
+      });
+    }
+
+    const feedback = await AiFeedback.findById(req.params.id);
+    if (!feedback) {
+      return res.status(404).json({ success: false, message: "Feedback not found" });
+    }
+
+    let knowledge = null;
+    if (reviewStatus === "approved") {
+      const approvedContent = String(req.body.approvedContent || "").trim();
+      const title = String(req.body.title || "").trim();
+      if (!title || !approvedContent) {
+        return res.status(400).json({
+          success: false,
+          message: "title and approvedContent are required for approved feedback",
+        });
+      }
+
+      knowledge = await Knowledge.create({
+        title,
+        content: approvedContent,
+        category: req.body.category || "general",
+        audience: req.body.audience || "all",
+        tags: Array.isArray(req.body.tags) ? req.body.tags : [],
+        documentType: "approved_feedback",
+        source: "feedback_review",
+        sourceReference: String(feedback._id),
+        approvedBy: getUserId(req.user),
+        isActive: true,
+      });
+    }
+
+    feedback.reviewStatus = reviewStatus;
+    feedback.reviewedBy = getUserId(req.user);
+    feedback.reviewedAt = new Date();
+    feedback.reviewNote = String(req.body.reviewNote || "").trim();
+    feedback.approvedKnowledgeId = knowledge?._id || null;
+    await feedback.save();
+
+    await recordAdminAudit({
+      adminUserId: getUserId(req.user),
+      action: `ai_feedback_${reviewStatus}`,
+      entityType: "AiFeedback",
+      entityId: feedback._id,
+      metadata: { approvedKnowledgeId: knowledge ? String(knowledge._id) : null },
+    });
+
+    return res.json({ success: true, data: feedback, knowledge });
+  } catch (err) {
+    return res.status(400).json({ success: false, message: err.message });
+  }
+}
+
 async function getMyChatHistory(req, res) {
   try {
     const userId = getUserId(req.user);
     const requestedLimit = Number(req.query.limit);
     const limit = Number.isFinite(requestedLimit)
-      ? Math.max(1, Math.min(requestedLimit, 200))
-      : 100;
+      ? Math.max(1, Math.min(requestedLimit, 2000))
+      : 1000;
     const filter = { userId };
 
     if (req.query.conversationId) {
       filter.conversationId = String(req.query.conversationId);
     }
 
-    const chats = await AiChat.find(filter)
-      .sort({ createdAt: 1 })
+    const [total, newestChats] = await Promise.all([
+      AiChat.countDocuments(filter),
+      AiChat.find(filter)
+      .sort({ createdAt: -1 })
       .limit(limit)
-      .lean();
+      .lean(),
+    ]);
+    const chats = newestChats.reverse();
+    const mappedMessages = chats.map((message) => ({
+      id: message.messageId || String(message._id),
+      dbId: String(message._id),
+      conversationId: message.conversationId,
+      role: message.role,
+      content: message.content,
+      timestamp: message.createdAt,
+      toolCalls: message.toolCalls || [],
+      knowledgeSources: message.knowledgeSources || [],
+      intent: message.intent || null,
+    }));
+    const sessionsById = new Map();
+
+    mappedMessages.forEach((message) => {
+      if (!sessionsById.has(message.conversationId)) {
+        sessionsById.set(message.conversationId, {
+          conversationId: message.conversationId,
+          title: "New chat",
+          createdAt: message.timestamp,
+          updatedAt: message.timestamp,
+          messages: [],
+        });
+      }
+
+      const session = sessionsById.get(message.conversationId);
+      session.messages.push(message);
+      session.updatedAt = message.timestamp;
+      if (session.title === "New chat" && message.role === "user") {
+        const normalized = message.content.replace(/\s+/g, " ").trim();
+        session.title = normalized.length > 34
+          ? `${normalized.slice(0, 34)}...`
+          : normalized || "New chat";
+      }
+    });
+    const sessions = Array.from(sessionsById.values()).sort(
+      (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt),
+    );
 
     return res.status(200).json({
       success: true,
-      messages: chats.map((message) => ({
-        id: message.messageId || String(message._id),
-        dbId: String(message._id),
-        conversationId: message.conversationId,
-        role: message.role,
-        content: message.content,
-        timestamp: message.createdAt,
-        toolCalls: message.toolCalls || [],
-        knowledgeSources: message.knowledgeSources || [],
-        intent: message.intent || null,
-      })),
+      messages: mappedMessages,
+      sessions,
+      pagination: { total, returned: mappedMessages.length, truncated: total > limit },
     });
   } catch (err) {
     console.error("GET /api/ai/history error:", err);
@@ -295,6 +474,28 @@ async function getMyChatHistory(req, res) {
       success: false,
       message: err.message || "Failed to load AI chat history",
     });
+  }
+}
+
+async function deleteMyConversation(req, res) {
+  try {
+    const userId = getUserId(req.user);
+    const conversationId = String(req.params.conversationId || "").trim();
+
+    if (!conversationId) {
+      return res.status(400).json({ success: false, message: "conversationId is required" });
+    }
+
+    const result = await AiChat.deleteMany({ userId, conversationId });
+    await AiFeedback.deleteMany({ userId, conversationId });
+
+    return res.status(200).json({
+      success: true,
+      message: "Conversation deleted",
+      deletedCount: result.deletedCount || 0,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 }
 
@@ -352,5 +553,8 @@ module.exports = {
   postChat,
   postFeedback,
   getMyChatHistory,
+  deleteMyConversation,
+  listFeedbackForReview,
+  reviewFeedback,
   postVoice,
 };

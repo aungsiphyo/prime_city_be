@@ -1,0 +1,5 @@
+{
+  "name": "getWeather",
+  "description": "Get current live weather and a three-day forecast for the configured PrimeCity location from Open-Meteo",
+  "parameters": { "type": "object", "properties": {} }
+}

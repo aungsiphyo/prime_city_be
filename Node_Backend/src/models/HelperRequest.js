@@ -29,7 +29,16 @@ const HelperRequestSchema = new mongoose.Schema({
     enum: ["Pending", "In Progress", "Completed"],
     default: "Pending",
   },
+  submitted_at: { type: Date, default: null },
+  submitted_by: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    default: null,
+  },
   created_at: { type: Date, default: Date.now },
 });
+
+HelperRequestSchema.index({ requested_by: 1, created_at: -1 });
+HelperRequestSchema.index({ room_id: 1, status: 1, created_at: -1 });
 
 module.exports = mongoose.model("HelperRequest", HelperRequestSchema);

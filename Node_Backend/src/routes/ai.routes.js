@@ -3,9 +3,13 @@ const {
   postChat,
   postFeedback,
   getMyChatHistory,
+  deleteMyConversation,
+  listFeedbackForReview,
+  reviewFeedback,
   postVoice,
 } = require("../controllers/ai.controller");
 const requireAuth = require("../middleware/authMiddleware");
+const authorizeRoles = require("../middleware/roleMiddleware");
 const {
   aiRateLimit,
   requireAIAuthIfConfigured,
@@ -32,6 +36,19 @@ router.post(
 );
 
 router.post("/feedback", requireAuth, postFeedback);
+router.get(
+  "/feedback/admin",
+  requireAuth,
+  authorizeRoles("Admin", "Staff"),
+  listFeedbackForReview,
+);
+router.post(
+  "/feedback/:id/review",
+  requireAuth,
+  authorizeRoles("Admin", "Staff"),
+  reviewFeedback,
+);
 router.get("/history", requireAuth, getMyChatHistory);
+router.delete("/history/:conversationId", requireAuth, deleteMyConversation);
 
 module.exports = router;
