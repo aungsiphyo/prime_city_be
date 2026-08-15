@@ -7,6 +7,44 @@ const {
   canSubmitPaymentForBill,
 } = require("../src/services/billing.service");
 const {
+  ROOM_PRICES,
+  calculatePropertyFinance,
+  getMonthlyInstallment,
+} = require("../src/services/propertyFinance.service");
+
+test("room prices use a 40 percent deposit and a 60 month finance plan", () => {
+  const expectedMonthly = {
+    Business: 5_000_000,
+    Office: 10_000_000,
+    Standard: 2_000_000,
+    Premium: 3_000_000,
+  };
+
+  Object.entries(ROOM_PRICES).forEach(([roomType, price]) => {
+    const finance = calculatePropertyFinance(roomType);
+    assert.equal(finance.purchase_price, price);
+    assert.equal(finance.down_payment_amount, price * 0.4);
+    assert.equal(finance.financed_amount, price * 0.6);
+    assert.equal(finance.installment_months, 60);
+    assert.equal(finance.monthly_installment_amount, expectedMonthly[roomType]);
+  });
+});
+
+test("monthly installment becomes zero only after the room plan is paid", () => {
+  assert.equal(
+    getMonthlyInstallment({ room_type: "Standard", installments_paid: 12 }),
+    2_000_000,
+  );
+  assert.equal(
+    getMonthlyInstallment({
+      room_type: "Standard",
+      installments_paid: 60,
+      installment_status: "Paid",
+    }),
+    0,
+  );
+});
+const {
   canAccessPaymentProof,
   detectImageMime,
 } = require("../src/routes/billPayment");

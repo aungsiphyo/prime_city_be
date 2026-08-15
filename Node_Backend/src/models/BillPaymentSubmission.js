@@ -22,7 +22,18 @@ const BillPaymentSubmissionSchema = new mongoose.Schema(
     },
     expected_amount: { type: Number, required: true, min: 0 },
     submitted_amount: { type: Number, required: true, min: 0 },
-    screenshot_path: { type: String, required: true, select: false },
+    screenshot_file_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+      select: false,
+    },
+    screenshot_path: { type: String, default: null, select: false },
+    storage_driver: {
+      type: String,
+      enum: ["MongoGridFS", "PrivateFile"],
+      default: "PrivateFile",
+      select: false,
+    },
     screenshot_mime: {
       type: String,
       enum: ["image/jpeg", "image/png", "image/webp"],

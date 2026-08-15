@@ -5,6 +5,9 @@ const Room = require("../models/Room");
 const User = require("../models/User");
 const protect = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
+const {
+  buildRoomFinanceFields,
+} = require("../services/propertyFinance.service");
 
 function isObjectId(value) {
   return mongoose.Types.ObjectId.isValid(String(value || ""));
@@ -12,6 +15,17 @@ function isObjectId(value) {
 
 async function buildRoomPayload(body, existingRoom = null) {
   const payload = { ...body };
+  const roomType = body.room_type || existingRoom?.room_type || "Standard";
+
+  Object.assign(
+    payload,
+    buildRoomFinanceFields(roomType, {
+      purchase_date: body.purchase_date || existingRoom?.purchase_date,
+      down_payment_paid_at: existingRoom?.down_payment_paid_at,
+      installment_start_date: existingRoom?.installment_start_date,
+      installments_paid: existingRoom?.installments_paid || 0,
+    }),
+  );
 
   if (Object.prototype.hasOwnProperty.call(body, "resident_id")) {
     const residentId = String(body.resident_id || "").trim();

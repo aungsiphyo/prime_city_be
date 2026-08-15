@@ -1,5 +1,3 @@
-const crypto = require("crypto");
-const fs = require("fs/promises");
 const path = require("path");
 const express = require("express");
 const mongoose = require("mongoose");
@@ -7,6 +5,7 @@ const multer = require("multer");
 const BillPaymentSubmission = require("../models/BillPaymentSubmission");
 const Notification = require("../models/Notification");
 const ServiceBill = require("../models/ServiceBill");
+const Room = require("../models/Room");
 const User = require("../models/User");
 const protect = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
@@ -17,12 +16,19 @@ const {
   canSubmitPaymentForBill,
 } = require("../services/billing.service");
 const { sendPushToUser, sendPushToUsers } = require("../services/push.service");
+const {
+  deletePaymentProof,
+  findPaymentProof,
+  openPaymentProof,
+  uploadPaymentProof,
+} = require("../services/paymentProof.service");
+const {
+  INSTALLMENT_MONTHS,
+  buildRoomFinanceFields,
+  calculatePropertyFinance,
+} = require("../services/propertyFinance.service");
 
 const router = express.Router();
-const PAYMENT_PROOF_DIR = path.resolve(
-  process.env.PAYMENT_PROOF_DIR ||
-    path.join(__dirname, "../../private/uploads/payment-proofs"),
-);
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -71,17 +77,19 @@ function detectImageMime(buffer) {
   return null;
 }
 
-function extensionForMime(mime) {
-  if (mime === "image/png") return ".png";
-  if (mime === "image/webp") return ".webp";
-  return ".jpg";
-}
-
 function serializeSubmission(submission) {
   const item = submission?.toObject ? submission.toObject() : { ...submission };
   delete item.screenshot_path;
+  delete item.screenshot_file_id;
   delete item.screenshot_mime;
   delete item.screenshot_size;
+  delete item.storage_driver;
+  if (item.room_id?.room_type) {
+    item.room_id = {
+      ...item.room_id,
+      ...buildRoomFinanceFields(item.room_id.room_type, item.room_id),
+    };
+  }
 
   return {
     ...item,
@@ -188,7 +196,7 @@ router.post(
   authorizeRoles("Resident", "Citizen"),
   upload.single("screenshot"),
   async (req, res) => {
-    let savedPath = null;
+    let uploadedProofId = null;
     let dbSession = null;
 
     try {
@@ -251,10 +259,13 @@ router.post(
         });
       }
 
-      await fs.mkdir(PAYMENT_PROOF_DIR, { recursive: true, mode: 0o700 });
-      const fileName = `${crypto.randomUUID()}${extensionForMime(detectedMime)}`;
-      savedPath = path.join(PAYMENT_PROOF_DIR, fileName);
-      await fs.writeFile(savedPath, req.file.buffer, { flag: "wx", mode: 0o600 });
+      uploadedProofId = await uploadPaymentProof({
+        buffer: req.file.buffer,
+        mime: detectedMime,
+        billId: bill._id,
+        roomId: resolved.room._id,
+        userId: currentUser._id,
+      });
 
       let submission;
       dbSession = await mongoose.startSession();
@@ -267,7 +278,8 @@ router.post(
               room_id: resolved.room._id,
               expected_amount: bill.amount,
               submitted_amount: Number(req.body.submitted_amount),
-              screenshot_path: savedPath,
+              screenshot_file_id: uploadedProofId,
+              storage_driver: "MongoGridFS",
               screenshot_mime: detectedMime,
               screenshot_size: req.file.size,
               user_note: req.body.user_note || "",
@@ -296,9 +308,9 @@ router.post(
       bill.status = "Payment Submitted";
       bill.resident_user_id = currentUser._id;
 
-      // The private proof is now referenced by a committed database record.
+      // The private GridFS proof is now referenced by a committed database record.
       // A notification outage must not delete it or make the client retry.
-      savedPath = null;
+      uploadedProofId = null;
       let notificationDelivery = { success: true };
       try {
         await notifyManagers(req.app, submission, bill, currentUser);
@@ -314,7 +326,7 @@ router.post(
       });
     } catch (err) {
       if (dbSession) await dbSession.endSession().catch(() => {});
-      if (savedPath) await fs.unlink(savedPath).catch(() => {});
+      if (uploadedProofId) await deletePaymentProof(uploadedProofId).catch(() => {});
       if (err.code === 11000) {
         return res.status(409).json({
           success: false,
@@ -338,8 +350,14 @@ router.get("/mine", protect, authorizeRoles("Resident", "Citizen"), async (req, 
         .sort({ submitted_at: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate("bill_id", "title amount status due_date billing_month billing_year")
-        .populate("room_id", "room_name building floor")
+        .populate(
+          "bill_id",
+          "title type amount status due_date billing_month billing_year electricity_amount water_amount installment_amount maintenance_amount service_amount other_amount other_description payment_window_days service_cutoff_warning paid_at payment_method",
+        )
+        .populate(
+          "room_id",
+          "room_name building floor room_type purchase_price down_payment_percent down_payment_amount financed_amount installment_months monthly_installment_amount installments_paid installment_remaining_amount installment_status",
+        )
         .lean(),
       BillPaymentSubmission.countDocuments(filter),
     ]);
@@ -366,9 +384,15 @@ router.get("/", protect, authorizeRoles("Admin", "Staff"), async (req, res) => {
         .sort({ submitted_at: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate("bill_id", "title amount status due_date billing_month billing_year")
+        .populate(
+          "bill_id",
+          "title type amount status due_date billing_month billing_year electricity_amount water_amount installment_amount maintenance_amount service_amount other_amount other_description payment_window_days service_cutoff_warning paid_at payment_method",
+        )
         .populate("user_id", "fullname email phone resident_uid")
-        .populate("room_id", "room_name building floor")
+        .populate(
+          "room_id",
+          "room_name building floor room_type purchase_price down_payment_percent down_payment_amount financed_amount installment_months monthly_installment_amount installments_paid installment_remaining_amount installment_status",
+        )
         .populate("reviewed_by", "fullname role")
         .lean(),
       BillPaymentSubmission.countDocuments(filter),
@@ -384,12 +408,12 @@ router.get("/", protect, authorizeRoles("Admin", "Staff"), async (req, res) => {
   }
 });
 
-router.get("/:id/proof", protect, async (req, res) => {
+router.get("/:id/proof", protect, async (req, res, next) => {
   try {
     const [currentUser, submission] = await Promise.all([
       getCurrentUser(req),
       BillPaymentSubmission.findById(req.params.id).select(
-        "+screenshot_path +screenshot_mime +screenshot_size",
+        "+screenshot_file_id +screenshot_path +screenshot_mime +screenshot_size +storage_driver",
       ),
     ]);
     if (!currentUser || !submission) {
@@ -405,10 +429,29 @@ router.get("/:id/proof", protect, async (req, res) => {
       return res.status(403).json({ success: false, message: "Access denied" });
     }
 
+    if (submission.screenshot_file_id) {
+      const storedProof = await findPaymentProof(submission.screenshot_file_id);
+      if (!storedProof) {
+        return res.status(404).json({ success: false, message: "Payment proof not found" });
+      }
+      res.setHeader("Content-Type", submission.screenshot_mime);
+      res.setHeader("Cache-Control", "private, no-store, max-age=0");
+      res.setHeader("Content-Disposition", "inline; filename=payment-proof");
+      res.setHeader("Content-Length", String(storedProof.length));
+      const download = openPaymentProof(submission.screenshot_file_id);
+      download.once("error", (error) => {
+        if (!res.headersSent) next(error);
+        else res.destroy(error);
+      });
+      return download.pipe(res);
+    }
+    if (!submission.screenshot_path) {
+      return res.status(404).json({ success: false, message: "Payment proof not found" });
+    }
     res.setHeader("Content-Type", submission.screenshot_mime);
-    res.setHeader("Content-Length", String(submission.screenshot_size));
     res.setHeader("Cache-Control", "private, no-store, max-age=0");
     res.setHeader("Content-Disposition", "inline; filename=payment-proof");
+    res.setHeader("Content-Length", String(submission.screenshot_size));
     return res.sendFile(path.resolve(submission.screenshot_path));
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -480,6 +523,45 @@ router.post(
             bill.approved_by = getUserId(req);
             bill.payment_method = "KPay manual transfer";
             bill.transaction_id = String(submission._id);
+            if (bill.installment_amount > 0 && !bill.installment_applied) {
+              const room = await Room.findById(bill.room_id).session(session);
+              if (!room) {
+                const error = new Error("Bill room no longer exists");
+                error.status = 409;
+                throw error;
+              }
+              const finance = calculatePropertyFinance(room.room_type);
+              if (!(Number(room.purchase_price) > 0)) {
+                room.purchase_price = finance.purchase_price;
+                room.down_payment_percent = finance.down_payment_percent;
+                room.down_payment_amount = finance.down_payment_amount;
+                room.financed_amount = finance.financed_amount;
+                room.installment_months = finance.installment_months;
+                room.monthly_installment_amount =
+                  finance.monthly_installment_amount;
+              }
+              const nextPaidMonths = Math.min(
+                INSTALLMENT_MONTHS,
+                Number(room.installments_paid || 0) + 1,
+              );
+              room.installments_paid = nextPaidMonths;
+              room.installment_remaining_amount = Math.max(
+                0,
+                Number(room.financed_amount || finance.financed_amount) -
+                  nextPaidMonths *
+                    Number(
+                      room.monthly_installment_amount ||
+                        finance.monthly_installment_amount,
+                    ),
+              );
+              room.installment_status =
+                nextPaidMonths >= INSTALLMENT_MONTHS ||
+                room.installment_remaining_amount === 0
+                  ? "Paid"
+                  : "Active";
+              await room.save({ session });
+              bill.installment_applied = true;
+            }
           } else {
             submission.status =
               action === "resubmission" ? "Resubmission Required" : "Rejected";
