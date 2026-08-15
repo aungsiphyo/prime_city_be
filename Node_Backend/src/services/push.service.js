@@ -17,10 +17,13 @@ function getFirebaseAdmin() {
   firebaseAdminLoadAttempted = true;
 
   try {
-    firebaseAdmin = require("firebase-admin");
+    firebaseAdmin = {
+      ...require("firebase-admin/app"),
+      ...require("firebase-admin/messaging"),
+    };
   } catch (err) {
     console.warn(
-      "firebase-admin package is not installed in this runtime; push notifications will be stored but not sent.",
+      "firebase-admin package is not installed in this runtime; push notifications will be stored but not sent."
     );
   }
 
@@ -29,20 +32,18 @@ function getFirebaseAdmin() {
 
 function getCredential(admin) {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    return admin.credential.cert(
-      JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON),
-    );
+    return admin.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON));
   }
 
   if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
     const serviceAccountPath = path.resolve(
-      process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+      process.env.FIREBASE_SERVICE_ACCOUNT_PATH
     );
-    return admin.credential.cert(require(serviceAccountPath));
+    return admin.cert(require(serviceAccountPath));
   }
 
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    return admin.credential.applicationDefault();
+    return admin.applicationDefault();
   }
 
   if (
@@ -50,7 +51,7 @@ function getCredential(admin) {
     process.env.FIREBASE_CLIENT_EMAIL &&
     process.env.FIREBASE_PRIVATE_KEY
   ) {
-    return admin.credential.cert({
+    return admin.cert({
       projectId: process.env.FIREBASE_PROJECT_ID.trim(),
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL.trim(),
       privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
@@ -73,12 +74,12 @@ function ensureFirebase() {
     const credential = getCredential(admin);
     if (!credential) {
       console.warn(
-        "Firebase Admin is not configured; push notifications will be stored but not sent.",
+        "Firebase Admin is not configured; push notifications will be stored but not sent."
       );
       return false;
     }
 
-    if (!admin.apps.length) {
+    if (!admin.getApps().length) {
       admin.initializeApp({
         credential,
         ...(process.env.FIREBASE_PROJECT_ID
@@ -152,11 +153,15 @@ async function sendPushToTokens(tokens, payload, options = {}) {
   try {
     const admin = getFirebaseAdmin();
     if (!admin) {
-      return { success: false, skipped: true, reason: "firebase-admin-missing" };
+      return {
+        success: false,
+        skipped: true,
+        reason: "firebase-admin-missing",
+      };
     }
 
     const response = await admin
-      .messaging()
+      .getMessaging()
       .sendEachForMulticast(buildMessage(uniqueTokens, payload, options));
 
     const invalidTokens = [];
