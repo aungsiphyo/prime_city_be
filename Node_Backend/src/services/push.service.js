@@ -5,6 +5,16 @@ const INVALID_TOKEN_CODES = new Set([
   "messaging/invalid-registration-token",
   "messaging/registration-token-not-registered",
 ]);
+const PUSH_CHANNELS = Object.freeze({
+  urgent: "urgent_alerts_v2",
+  community: "community_updates_v2",
+  helper: "helper_requests_v2",
+});
+const CHANNEL_ALIASES = Object.freeze({
+  urgent_alerts: PUSH_CHANNELS.urgent,
+  community_updates: PUSH_CHANNELS.community,
+  helper_requests: PUSH_CHANNELS.helper,
+});
 
 let firebaseReady = false;
 let firebaseInitAttempted = false;
@@ -105,7 +115,8 @@ function stringifyData(data = {}) {
 }
 
 function buildMessage(tokens, payload, options = {}) {
-  const channelId = options.channelId || "community_updates";
+  const requestedChannel = options.channelId || PUSH_CHANNELS.community;
+  const channelId = CHANNEL_ALIASES[requestedChannel] || requestedChannel;
   const type = payload.type || options.type || "General";
 
   return {
@@ -125,8 +136,10 @@ function buildMessage(tokens, payload, options = {}) {
       notification: {
         channelId,
         sound: "default",
+        defaultSound: true,
+        defaultVibrateTimings: true,
         priority: options.androidPriority || "high",
-        visibility: "public",
+        visibility: "private",
       },
     },
     apns: {
@@ -203,6 +216,8 @@ async function sendPushToUsers(userIds, payload, options = {}) {
 }
 
 module.exports = {
+  PUSH_CHANNELS,
+  buildMessage,
   sendPushToTokens,
   sendPushToUser,
   sendPushToUsers,
