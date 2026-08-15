@@ -82,7 +82,12 @@ app.use(
 app.use(express.static(path.join(__dirname, "public")));
 
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(
+    process.env.MONGO_URI,
+    process.env.MONGO_DB_NAME
+      ? { dbName: process.env.MONGO_DB_NAME.trim() }
+      : undefined,
+  )
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.log("❌ DB Error:", err));
 
@@ -274,6 +279,7 @@ app.use("/api/reports", require("./src/routes/report"));
 app.use("/api/helper-requests", require("./src/routes/helperRequest"));
 app.use("/api/helpers", require("./src/routes/helper"));
 app.use("/api/bills", require("./src/routes/serviceBill"));
+app.use("/api/bill-payments", require("./src/routes/billPayment"));
 app.use("/api/visitors", require("./src/routes/visitor"));
 app.use("/api/knowledge", require("./src/routes/knowledge.routes"));
 app.use("/api/audit-logs", require("./src/routes/audit.routes"));

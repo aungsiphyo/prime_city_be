@@ -14,6 +14,7 @@ const {
   isReviewerPassword,
 } = require("../utils/reviewerAccess");
 const { resolveCurrentRoom } = require("../services/aiTools.service");
+const { getPublicSignupRole } = require("../utils/authPolicy");
 
 const router = express.Router();
 const reviewerAccess = getReviewerAccessConfig();
@@ -73,7 +74,7 @@ const generateTokens = (user, role = user.role) => {
 // ================= SIGNUP =================
 router.post("/signup", async (req, res) => {
   try {
-    const { fullname, email, phone, password, role, room_id, rfid_uid, profile_image } =
+    const { fullname, email, phone, password, room_id, rfid_uid, profile_image } =
       req.body;
     const linkedRoom = room_id ? await findRoomByRef(room_id) : null;
     const normalizedRfidUid = normalizeRfidUid(rfid_uid);
@@ -109,7 +110,7 @@ router.post("/signup", async (req, res) => {
       email,
       phone,
       password,
-      role,
+      role: getPublicSignupRole(),
       room_id: linkedRoom ? String(linkedRoom._id) : room_id,
       rfid_uid: normalizedRfidUid || undefined,
       profile_image: profile_image || null,
@@ -181,16 +182,16 @@ router.post("/login/step1", async (req, res) => {
     try {
       // 📧 Email ပို့ဆောင်ခြင်း
       await sendEmail(email, otp);
-      console.log(`✅ OTP sent to ${email}`);
+      console.log(`✅ Login OTP sent to ${email}`);
 
       res.status(200).json({
         message: "OTP sent to your registered email",
       });
     } catch (mailErr) {
-      console.error(`Failed to send OTP to ${email}:`, mailErr);
+      console.error(`Failed to send OTP to ${email}:`, mailErr.message);
       res
         .status(500)
-        .json({ message: "Failed to send Email OTP. Please try again.", error: mailErr.message, stack: mailErr.stack });
+        .json({ message: "Failed to send Email OTP. Please try again." });
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -288,7 +289,7 @@ router.post("/forgot-password/step1", async (req, res) => {
 
     try {
       await sendEmail(email, otp);
-      console.log(`🔐 Forgot OTP sent to ${email}: ${otp}`);
+      console.log(`🔐 Password reset OTP sent to ${email}`);
       res.status(200).json({ message: "OTP sent to your email" });
     } catch (mailErr) {
       res

@@ -13,7 +13,15 @@ const Notification = require("../models/Notification");
 const Helper = require("../models/Helper");
 const HelperRequest = require("../models/HelperRequest");
 
-const BILL_STATUSES = new Set(["Pending", "Paid", "Overdue"]);
+const BILL_STATUSES = new Set([
+  "Pending",
+  "Payment Submitted",
+  "Under Review",
+  "Paid",
+  "Rejected",
+  "Overdue",
+  "Pending Verification",
+]);
 const ANNOUNCEMENT_TYPES = new Set(["General", "Maintenance", "Event"]);
 const HELPER_GENDER_PREFERENCES = new Set([
   "Male",
@@ -72,7 +80,20 @@ function mapBill(bill) {
     type: bill.type || "General",
     amount: bill.amount,
     status: bill.status,
+    paymentStatus: bill.status,
     dueDate: bill.due_date,
+    billingMonth: bill.billing_month || null,
+    billingYear: bill.billing_year || null,
+    breakdown: {
+      electricity: Number(bill.electricity_amount || 0),
+      water: Number(bill.water_amount || 0),
+      apartmentInstallment: Number(bill.installment_amount || 0),
+      maintenance: Number(bill.maintenance_amount || 0),
+      serviceFee: Number(bill.service_amount || 0),
+      other: Number(bill.other_amount || 0),
+      otherDescription: bill.other_description || "",
+    },
+    paidAt: bill.paid_at || null,
     createdAt: bill.created_at,
   };
 }
@@ -681,6 +702,9 @@ async function createHelperRequest(args = {}, user) {
 async function getAnnouncements(args = {}, user) {
   const limit = parseLimit(args.limit, 5, 20);
   const filter = {};
+  const clauses = [
+    { $or: [{ status: "Active" }, { status: { $exists: false } }] },
+  ];
   const q = String(args.q || args.query || "").trim();
 
   const type = normalizeEnum(args.type, ANNOUNCEMENT_TYPES);
@@ -691,10 +715,40 @@ async function getAnnouncements(args = {}, user) {
 
   if (q) {
     const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    filter.$or = [{ title: regex }, { message: regex }];
+    clauses.push({ $or: [{ title: regex }, { message: regex }] });
   }
 
   const currentUser = await getCurrentUser(user);
+  if (currentUser && !["Admin", "Staff"].includes(currentUser.role)) {
+    const resolved = await resolveCurrentRoom(currentUser);
+    clauses.push({
+      $or: [
+        { audience_type: "All Residents" },
+        { audience_type: { $exists: false } },
+        ...(resolved.found
+          ? [
+              {
+                audience_type: "Building",
+                audience_building: resolved.room.building,
+              },
+              {
+                audience_type: "Floor",
+                audience_floor: resolved.room.floor,
+                $or: [
+                  { audience_building: resolved.room.building },
+                  { audience_building: "" },
+                ],
+              },
+              {
+                audience_type: "Room",
+                audience_room_id: resolved.room._id,
+              },
+            ]
+          : []),
+      ],
+    });
+  }
+  filter.$and = clauses;
   const notificationFilter = currentUser ? { user_id: currentUser._id } : null;
   const [announcements, notifications] = await Promise.all([
     Announcement.find(filter).sort({ created_at: -1 }).limit(limit).lean(),

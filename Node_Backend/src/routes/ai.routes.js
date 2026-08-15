@@ -3,6 +3,7 @@ const {
   postChat,
   postFeedback,
   getMyChatHistory,
+  getMyChatSessions,
   deleteMyConversation,
   listFeedbackForReview,
   reviewFeedback,
@@ -49,6 +50,7 @@ router.post(
   reviewFeedback,
 );
 router.get("/history", requireAuth, getMyChatHistory);
+router.get("/history/sessions", requireAuth, getMyChatSessions);
 router.delete("/history/:conversationId", requireAuth, deleteMyConversation);
 
 module.exports = router;

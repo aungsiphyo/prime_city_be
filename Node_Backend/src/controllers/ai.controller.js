@@ -477,6 +477,93 @@ async function getMyChatHistory(req, res) {
   }
 }
 
+async function getMyChatSessions(req, res) {
+  try {
+    const userId = getUserId(req.user);
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+    const match = { userId: new (require("mongoose").Types.ObjectId)(userId) };
+
+    const [sessionRows, countRows] = await Promise.all([
+      AiChat.aggregate([
+        { $match: match },
+        { $sort: { createdAt: 1 } },
+        {
+          $group: {
+            _id: "$conversationId",
+            createdAt: { $first: "$createdAt" },
+            updatedAt: { $last: "$createdAt" },
+            firstContent: { $first: "$content" },
+          },
+        },
+        { $sort: { updatedAt: -1 } },
+        { $skip: (page - 1) * limit },
+        { $limit: limit },
+      ]),
+      AiChat.aggregate([
+        { $match: match },
+        { $group: { _id: "$conversationId" } },
+        { $count: "total" },
+      ]),
+    ]);
+    const conversationIds = sessionRows.map((row) => row._id);
+    const messages = await AiChat.find({
+      userId,
+      conversationId: { $in: conversationIds },
+    })
+      .sort({ createdAt: 1 })
+      .lean();
+    const messagesBySession = new Map();
+    messages.forEach((message) => {
+      const mapped = {
+        id: message.messageId || String(message._id),
+        dbId: String(message._id),
+        conversationId: message.conversationId,
+        role: message.role,
+        content: message.content,
+        timestamp: message.createdAt,
+        toolCalls: message.toolCalls || [],
+        knowledgeSources: message.knowledgeSources || [],
+        intent: message.intent || null,
+      };
+      const existing = messagesBySession.get(message.conversationId) || [];
+      existing.push(mapped);
+      messagesBySession.set(message.conversationId, existing);
+    });
+    const sessions = sessionRows.map((row) => {
+      const sessionMessages = messagesBySession.get(row._id) || [];
+      const firstUserMessage = sessionMessages.find((item) => item.role === "user");
+      const normalized = String(firstUserMessage?.content || row.firstContent || "")
+        .replace(/\s+/g, " ")
+        .trim();
+      return {
+        conversationId: row._id,
+        title:
+          normalized.length > 34
+            ? `${normalized.slice(0, 34)}...`
+            : normalized || "New chat",
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        messages: sessionMessages,
+      };
+    });
+    const total = countRows[0]?.total || 0;
+
+    return res.json({
+      success: true,
+      sessions,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+        limit,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
 async function deleteMyConversation(req, res) {
   try {
     const userId = getUserId(req.user);
@@ -553,6 +640,7 @@ module.exports = {
   postChat,
   postFeedback,
   getMyChatHistory,
+  getMyChatSessions,
   deleteMyConversation,
   listFeedbackForReview,
   reviewFeedback,

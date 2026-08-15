@@ -3,6 +3,8 @@ const mongoose = require("mongoose");
 const router = express.Router();
 const Room = require("../models/Room");
 const User = require("../models/User");
+const protect = require("../middleware/authMiddleware");
+const authorizeRoles = require("../middleware/roleMiddleware");
 
 function isObjectId(value) {
   return mongoose.Types.ObjectId.isValid(String(value || ""));
@@ -91,7 +93,7 @@ function populateRoom(query) {
   );
 }
 
-router.post("/", async (req, res) => {
+router.post("/", protect, authorizeRoles("Admin", "Staff"), async (req, res) => {
   try {
     const payload = await buildRoomPayload(req.body);
     const savedRoom = await new Room(payload).save();
@@ -107,7 +109,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.get("/", async (req, res) => {
+router.get("/", protect, authorizeRoles("Admin", "Staff"), async (req, res) => {
   try {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
@@ -124,7 +126,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", protect, authorizeRoles("Admin", "Staff"), async (req, res) => {
   try {
     const room = await populateRoom(Room.findById(req.params.id));
     if (!room) return res.status(404).json({ message: "Room not found" });
@@ -134,7 +136,7 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", protect, authorizeRoles("Admin", "Staff"), async (req, res) => {
   try {
     const existingRoom = await Room.findById(req.params.id).lean();
     if (!existingRoom)
@@ -155,7 +157,7 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", protect, authorizeRoles("Admin", "Staff"), async (req, res) => {
   try {
     const deletedRoom = await Room.findByIdAndDelete(req.params.id);
     if (!deletedRoom)
