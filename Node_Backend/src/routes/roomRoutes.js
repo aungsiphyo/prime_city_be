@@ -8,6 +8,9 @@ const authorizeRoles = require("../middleware/roleMiddleware");
 const {
   buildRoomFinanceFields,
 } = require("../services/propertyFinance.service");
+const {
+  ensureMonthlyBillForRoom,
+} = require("../services/monthlyBilling.service");
 
 function isObjectId(value) {
   return mongoose.Types.ObjectId.isValid(String(value || ""));
@@ -107,11 +110,27 @@ function populateRoom(query) {
   );
 }
 
+async function ensureOccupiedRoomBill(app, room) {
+  if (!room?.resident_id || room.status !== "Occupied") return;
+
+  try {
+    await ensureMonthlyBillForRoom(room, { app });
+  } catch (error) {
+    // Room assignment remains authoritative. The idempotent scheduler retries
+    // any transient billing failure without creating duplicate room/month bills.
+    console.error(
+      `Immediate monthly billing failed for room ${String(room._id)}:`,
+      error.message,
+    );
+  }
+}
+
 router.post("/", protect, authorizeRoles("Admin", "Staff"), async (req, res) => {
   try {
     const payload = await buildRoomPayload(req.body);
     const savedRoom = await new Room(payload).save();
     await syncResidentRoomLink(savedRoom);
+    await ensureOccupiedRoomBill(req.app, savedRoom);
 
     const populatedRoom = await populateRoom(Room.findById(savedRoom._id));
     res.status(201).json(populatedRoom);
@@ -163,6 +182,7 @@ router.put("/:id", protect, authorizeRoles("Admin", "Staff"), async (req, res) =
     });
 
     await syncResidentRoomLink(updatedRoom, existingRoom.resident_id);
+    await ensureOccupiedRoomBill(req.app, updatedRoom);
 
     const populatedRoom = await populateRoom(Room.findById(updatedRoom._id));
     res.status(200).json(populatedRoom);

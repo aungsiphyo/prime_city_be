@@ -14,6 +14,9 @@ const {
   isReviewerPassword,
 } = require("../utils/reviewerAccess");
 const { resolveCurrentRoom } = require("../services/aiTools.service");
+const {
+  ensureMonthlyBillForRoom,
+} = require("../services/monthlyBilling.service");
 const { getPublicSignupRole } = require("../utils/authPolicy");
 
 const router = express.Router();
@@ -41,7 +44,7 @@ async function findRoomByRef(roomRef) {
   return Room.findOne(query);
 }
 
-async function syncUserRoom(user, room) {
+async function syncUserRoom(user, room, app) {
   if (!room) return user;
 
   room.resident_id = user._id;
@@ -52,6 +55,17 @@ async function syncUserRoom(user, room) {
   if (String(user.room_id) !== String(room._id)) {
     user.room_id = String(room._id);
     await user.save();
+  }
+
+  try {
+    await ensureMonthlyBillForRoom(room, { app });
+  } catch (error) {
+    // Do not roll back a successful registration for a transient billing
+    // delivery error; the idempotent scheduler will retry the missing bill.
+    console.error(
+      `Signup monthly billing failed for room ${String(room._id)}:`,
+      error.message,
+    );
   }
 
   return user;
@@ -116,7 +130,7 @@ router.post("/signup", async (req, res) => {
       profile_image: profile_image || null,
     });
     await newUser.save();
-    await syncUserRoom(newUser, linkedRoom);
+    await syncUserRoom(newUser, linkedRoom, req.app);
 
     res.status(201).json({
       message: "Register success",
