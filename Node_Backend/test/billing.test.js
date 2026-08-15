@@ -71,6 +71,14 @@ test("payment amount must exactly match the bill total", () => {
 
 test("monthly billing key prevents duplicate room-month bills", () => {
   assert.equal(buildBillingKey("room-a", 2026, 8), "room-a:2026-08");
+  assert.equal(
+    buildBillingKey("room-a", 2026, 8, "Service Fee"),
+    "room-a:2026-08:service-fee",
+  );
+  assert.equal(
+    buildBillingKey("room-a", 2026, 8, "Apartment Installment"),
+    "room-a:2026-08:apartment-installment",
+  );
   assert.equal(buildBillingKey("room-a", 2026, 13), null);
 });
 

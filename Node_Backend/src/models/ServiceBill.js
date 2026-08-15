@@ -19,6 +19,20 @@ const ServiceBillSchema = new mongoose.Schema(
     billing_month: { type: Number, min: 1, max: 12, default: null },
     billing_year: { type: Number, min: 2000, max: 2200, default: null },
     billing_key: { type: String, trim: true, default: null },
+    category: {
+      type: String,
+      enum: [
+        "Apartment Installment",
+        "Electricity",
+        "Water",
+        "Maintenance",
+        "Service Fee",
+        "Other",
+        "Combined",
+      ],
+      default: "Combined",
+      index: true,
+    },
     electricity_amount: { type: Number, min: 0, default: 0 },
     water_amount: { type: Number, min: 0, default: 0 },
     installment_amount: { type: Number, min: 0, default: 0 },
@@ -26,7 +40,7 @@ const ServiceBillSchema = new mongoose.Schema(
     service_amount: { type: Number, min: 0, default: 0 },
     other_amount: { type: Number, min: 0, default: 0 },
     other_description: { type: String, trim: true, maxlength: 240, default: "" },
-    payment_window_days: { type: Number, min: 1, max: 31, default: 7 },
+    payment_window_days: { type: Number, min: 1, max: 365, default: 7 },
     service_cutoff_warning: {
       type: String,
       trim: true,
@@ -68,6 +82,7 @@ const ServiceBillSchema = new mongoose.Schema(
 );
 
 ServiceBillSchema.index({ room_id: 1, due_date: -1, created_at: -1 });
+ServiceBillSchema.index({ room_id: 1, billing_year: -1, billing_month: -1, category: 1 });
 ServiceBillSchema.index(
   { billing_key: 1 },
   {

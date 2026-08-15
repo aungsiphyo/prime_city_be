@@ -78,6 +78,7 @@ function mapBill(bill) {
     id: String(bill._id),
     title: bill.title || "Service bill",
     type: bill.type || "General",
+    category: bill.category || "Combined",
     amount: bill.amount,
     status: bill.status,
     paymentStatus: bill.status,

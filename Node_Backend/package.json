@@ -10,6 +10,9 @@
     "assign:rfid": "node scripts/assign-rfid-uid.js",
     "migrate:v2": "node scripts/migrate-v2-billing-announcements.js",
     "migrate:v2:apply": "node scripts/migrate-v2-billing-announcements.js --apply",
+    "migrate:split-category-bills": "node scripts/split-category-bills.js",
+    "migrate:split-category-bills:apply": "node scripts/split-category-bills.js --apply",
+    "test:category-billing-e2e": "node scripts/test-category-billing-e2e.js",
     "test:payment-storage": "node scripts/test-payment-proof-storage.js",
     "start": "node server.js",
     "dev": "nodemon server.js"

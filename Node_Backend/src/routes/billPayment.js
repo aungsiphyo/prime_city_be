@@ -118,14 +118,16 @@ async function notifyManagers(app, submission, bill, resident) {
   if (!managerIds.length) return;
 
   const roomName = bill.room_id?.room_name || "Unknown room";
-  const title = "Bill payment submitted";
-  const message = `${resident.fullname || "Resident"} from Room ${roomName} submitted a KPay payment screenshot for ${bill.amount} MMK.`;
+  const billCategory = bill.category || bill.type || "Service Bill";
+  const title = `${billCategory} payment submitted`;
+  const message = `${resident.fullname || "Resident"} from Room ${roomName} submitted a KPay payment screenshot for the ${billCategory} bill (${bill.amount} MMK).`;
   const data = {
     payment_submission_id: String(submission._id),
     bill_id: String(bill._id),
     resident_id: String(resident._id),
     room_id: String(bill.room_id?._id || bill.room_id),
     room_name: roomName,
+    bill_category: billCategory,
     expected_amount: String(bill.amount),
   };
   const notifications = await Notification.insertMany(
@@ -146,17 +148,19 @@ async function notifyManagers(app, submission, bill, resident) {
 
 async function notifyResident(app, submission, bill, action) {
   const approved = action === "approve";
+  const billCategory = bill.category || bill.type || "Service Bill";
   const title = approved ? "Bill payment approved" : "Bill payment update";
   const message = approved
-    ? `Your ${bill.title} payment of ${bill.amount} MMK has been approved.`
+    ? `Your ${billCategory} payment of ${bill.amount} MMK has been approved.`
     : action === "resubmission"
-      ? `Please resubmit the payment screenshot for ${bill.title}. ${submission.rejection_reason || submission.admin_note || "Check the screenshot and exact amount."}`
-      : `Your payment submission for ${bill.title} was rejected. ${submission.rejection_reason || submission.admin_note || "Please contact management for details."}`;
+      ? `Please resubmit the payment screenshot for your ${billCategory} bill. ${submission.rejection_reason || submission.admin_note || "Check the screenshot and exact amount."}`
+      : `Your payment submission for the ${billCategory} bill was rejected. ${submission.rejection_reason || submission.admin_note || "Please contact management for details."}`;
   const data = {
     payment_submission_id: String(submission._id),
     bill_id: String(bill._id),
     payment_status: submission.status,
     bill_status: bill.status,
+    bill_category: billCategory,
   };
   const notification = await Notification.create({
     user_id: submission.user_id,
@@ -352,7 +356,7 @@ router.get("/mine", protect, authorizeRoles("Resident", "Citizen"), async (req, 
         .limit(limit)
         .populate(
           "bill_id",
-          "title type amount status due_date billing_month billing_year electricity_amount water_amount installment_amount maintenance_amount service_amount other_amount other_description payment_window_days service_cutoff_warning paid_at payment_method",
+          "title type category amount status due_date billing_month billing_year electricity_amount water_amount installment_amount maintenance_amount service_amount other_amount other_description payment_window_days service_cutoff_warning paid_at payment_method",
         )
         .populate(
           "room_id",
@@ -386,7 +390,7 @@ router.get("/", protect, authorizeRoles("Admin", "Staff"), async (req, res) => {
         .limit(limit)
         .populate(
           "bill_id",
-          "title type amount status due_date billing_month billing_year electricity_amount water_amount installment_amount maintenance_amount service_amount other_amount other_description payment_window_days service_cutoff_warning paid_at payment_method",
+          "title type category amount status due_date billing_month billing_year electricity_amount water_amount installment_amount maintenance_amount service_amount other_amount other_description payment_window_days service_cutoff_warning paid_at payment_method",
         )
         .populate("user_id", "fullname email phone resident_uid")
         .populate(

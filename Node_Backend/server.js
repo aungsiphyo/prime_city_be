@@ -10,6 +10,9 @@ const QRCode = require("qrcode");
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
 const setupMQTT = require("./src/services/mqtt");
+const {
+  startMonthlyBillingScheduler,
+} = require("./src/services/monthlyBilling.service");
 
 const app = express();
 const PORT = Number(process.env.PORT || 5001);
@@ -88,7 +91,10 @@ mongoose
       ? { dbName: process.env.MONGO_DB_NAME.trim() }
       : undefined,
   )
-  .then(() => console.log("✅ MongoDB Connected"))
+  .then(() => {
+    console.log("✅ MongoDB Connected");
+    startMonthlyBillingScheduler(app);
+  })
   .catch((err) => console.log("❌ DB Error:", err));
 
 app.set("sseClients", sseClients);

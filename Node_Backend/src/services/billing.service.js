@@ -27,14 +27,26 @@ function hasComponentAmounts(source = {}) {
   return COMPONENT_FIELDS.some((field) => Number(source[field] || 0) > 0);
 }
 
-function buildBillingKey(roomId, billingYear, billingMonth) {
+function normalizeBillingCategory(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || null;
+}
+
+function buildBillingKey(roomId, billingYear, billingMonth, category = null) {
   const year = Number(billingYear);
   const month = Number(billingMonth);
 
   if (!roomId || !Number.isInteger(year) || !Number.isInteger(month)) return null;
   if (year < 2000 || year > 2200 || month < 1 || month > 12) return null;
 
-  return `${String(roomId)}:${year}-${String(month).padStart(2, "0")}`;
+  const base = `${String(roomId)}:${year}-${String(month).padStart(2, "0")}`;
+  const categoryKey = normalizeBillingCategory(category);
+  return categoryKey ? `${base}:${categoryKey}` : base;
 }
 
 function amountsMatch(expected, submitted) {
@@ -66,5 +78,6 @@ module.exports = {
   canSubmitPaymentForBill,
   hasComponentAmounts,
   isActivePaymentStatus,
+  normalizeBillingCategory,
   normalizeMoney,
 };
