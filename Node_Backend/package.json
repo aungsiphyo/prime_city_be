@@ -8,6 +8,8 @@
     "backfill:uids": "node scripts/backfill-uids.js",
     "export:ai-dataset": "node scripts/export-ai-finetune-dataset.js",
     "assign:rfid": "node scripts/assign-rfid-uid.js",
+    "migrate:v2": "node scripts/migrate-v2-billing-announcements.js",
+    "migrate:v2:apply": "node scripts/migrate-v2-billing-announcements.js --apply",
     "start": "node server.js",
     "dev": "nodemon server.js"
   },
