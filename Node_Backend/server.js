@@ -82,7 +82,12 @@ app.use(
 app.use(express.static(path.join(__dirname, "public")));
 
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(
+    process.env.MONGO_URI,
+    process.env.MONGO_DB_NAME
+      ? { dbName: process.env.MONGO_DB_NAME.trim() }
+      : undefined,
+  )
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.log("❌ DB Error:", err));
 
