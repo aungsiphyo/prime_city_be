@@ -75,12 +75,35 @@ const VisitorSchema = new mongoose.Schema(
 
     agreedToTerms: { type: Boolean, default: false },
 
+    registration_type: {
+      type: String,
+      enum: ["WalkIn", "PreRegistered"],
+      default: "WalkIn",
+      index: true,
+    },
+    pre_registration_qr_id: {
+      type: String,
+      unique: true,
+      sparse: true,
+      select: false,
+    },
+    qr_valid_from: { type: Date, default: null },
+    qr_expires_at: { type: Date, default: null },
+    qr_status: {
+      type: String,
+      enum: ["Active", "Used", "Revoked", "Expired", null],
+      default: null,
+      index: true,
+    },
+    gate_scanned_at: { type: Date, default: null },
+    gate_scan_count: { type: Number, default: 0, min: 0 },
+
     badgeNumber: { type: String, default: "" },
     check_in_time: { type: Date, default: Date.now },
     check_out_time: { type: Date, default: null },
     visitDate: { type: Date, default: Date.now },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 VisitorSchema.pre("save", function () {
@@ -102,7 +125,7 @@ VisitorSchema.pre("save", function () {
     const d = new Date();
     const prefix = `V${d.getFullYear()}${String(d.getMonth() + 1).padStart(
       2,
-      "0",
+      "0"
     )}${String(d.getDate()).padStart(2, "0")}`;
     const uniqueSuffix = String(this._id).slice(-6).toUpperCase();
     this.badgeNumber = `${prefix}-${uniqueSuffix}`;
@@ -111,5 +134,6 @@ VisitorSchema.pre("save", function () {
 
 VisitorSchema.index({ registered_by: 1, createdAt: -1 });
 VisitorSchema.index({ target_room_id: 1, createdAt: -1 });
+VisitorSchema.index({ registration_type: 1, qr_status: 1, qr_expires_at: 1 });
 
 module.exports = mongoose.model("Visitor", VisitorSchema);

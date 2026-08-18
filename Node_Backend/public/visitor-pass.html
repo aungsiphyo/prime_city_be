@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow,noarchive" />
+    <title>Prime City Visitor Pass</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #081426;
+        color: #f5f7fb;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      main {
+        width: min(100%, 430px);
+        background: #152337;
+        border: 1px solid #263850;
+        border-radius: 24px;
+        padding: 24px;
+        text-align: center;
+        box-shadow: 0 24px 80px #0006;
+      }
+      .brand {
+        color: #08bad6;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      h1 {
+        font-size: 27px;
+        margin: 12px 0 5px;
+      }
+      .meta {
+        color: #9eb0c6;
+        margin: 4px 0;
+      }
+      img {
+        display: block;
+        width: min(100%, 320px);
+        aspect-ratio: 1;
+        background: white;
+        border-radius: 16px;
+        margin: 22px auto;
+      }
+      .notice {
+        background: #0c3040;
+        border-radius: 13px;
+        padding: 13px;
+        color: #bdeef5;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .error {
+        color: #ffb5b5;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand">Prime City · Secure Gate Pass</div>
+      <div id="loading">Verifying visitor pass…</div>
+      <div id="pass" hidden>
+        <h1 id="name"></h1>
+        <p class="meta" id="badge"></p>
+        <p class="meta" id="purpose"></p>
+        <img id="qr" alt="Prime City visitor gate QR" />
+        <div class="notice">
+          Show this QR to the ESP32-CAM at the gate. This pass is valid once and
+          cannot be reused after check-in.
+        </div>
+      </div>
+      <p id="error" class="error" hidden></p>
+    </main>
+    <script>
+      async function loadPass() {
+        const token = decodeURIComponent(location.hash.slice(1));
+        if (!token) throw new Error("Visitor pass token is missing");
+        const response = await fetch("/api/visitor-pass/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success)
+          throw new Error(result.message || "Pass verification failed");
+        document.getElementById("name").textContent =
+          result.data.name || "Visitor";
+        document.getElementById("badge").textContent = result.data.badge
+          ? `Badge ${result.data.badge}`
+          : "";
+        document.getElementById("purpose").textContent = result.data.purpose
+          ? `Purpose: ${result.data.purpose}`
+          : "";
+        document.getElementById("qr").src = result.data.qr_image_data_url;
+        document.getElementById("loading").hidden = true;
+        document.getElementById("pass").hidden = false;
+      }
+      loadPass().catch((error) => {
+        document.getElementById("loading").hidden = true;
+        const element = document.getElementById("error");
+        element.textContent = error.message;
+        element.hidden = false;
+      });
+    </script>
+  </body>
+</html>

@@ -9,6 +9,9 @@ const protect = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
 const { sendPushToUser, sendPushToUsers } = require("../services/push.service");
 const { recordAdminAudit } = require("../services/audit.service");
+const {
+  getHelperPriceSnapshot,
+} = require("../services/communityCatalog.service");
 
 function getUserId(req) {
   return req.user?.id || req.user?._id;
@@ -157,6 +160,14 @@ router.post("/", protect, async (req, res) => {
       });
     }
 
+    const priceSnapshot = getHelperPriceSnapshot(type);
+    if (!priceSnapshot) {
+      return res.status(400).json({
+        success: false,
+        message: "Unsupported helper category",
+      });
+    }
+
     const request = await HelperRequest.create({
       requested_by: currentUser?._id,
       room_id,
@@ -164,6 +175,7 @@ router.post("/", protect, async (req, res) => {
       type,
       note,
       gender_preferred,
+      ...priceSnapshot,
     });
 
     const populatedRequest = await HelperRequest.findById(request._id)

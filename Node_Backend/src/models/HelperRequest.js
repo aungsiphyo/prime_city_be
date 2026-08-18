@@ -15,6 +15,14 @@ const HelperRequestSchema = new mongoose.Schema({
     ref: "Helper",
   },
   type: { type: String, required: true }, // e.g., "Cleaning", "Maintenance"
+  quoted_price_mmk: { type: Number, min: 0, default: null },
+  quoted_currency: { type: String, enum: ["MMK"], default: "MMK" },
+  service_window: { type: String, trim: true, default: null },
+  pricing_status: {
+    type: String,
+    enum: ["Fixed", "Admin Confirmation"],
+    default: "Admin Confirmation",
+  },
   note: {
     type: String,
     trim: true,

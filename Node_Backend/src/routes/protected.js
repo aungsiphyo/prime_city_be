@@ -108,6 +108,10 @@ router.get("/profile", protect, async (req, res) => {
         id: user._id,
         resident_uid: user.resident_uid || null,
         rfid_uid: user.rfid_uid || null,
+        card_status:
+          user.rfid_uid && (!user.card_status || user.card_status === "unassigned")
+            ? "active"
+            : user.card_status || "unassigned",
         fullname: user.fullname,
         email: user.email,
         phone: user.phone,

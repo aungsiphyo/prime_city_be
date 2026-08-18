@@ -127,6 +127,7 @@ router.post("/signup", async (req, res) => {
       role: getPublicSignupRole(),
       room_id: linkedRoom ? String(linkedRoom._id) : room_id,
       rfid_uid: normalizedRfidUid || undefined,
+      card_status: normalizedRfidUid ? "active" : "unassigned",
       profile_image: profile_image || null,
     });
     await newUser.save();

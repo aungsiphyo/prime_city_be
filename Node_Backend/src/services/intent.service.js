@@ -439,6 +439,7 @@ function classifyIntent(message) {
     "ကျန်",
     "လွတ်",
     "ဘယ်နှစ်",
+    "ဘယ်နှ",
     "ဘယ်လောက်",
   ]);
 
