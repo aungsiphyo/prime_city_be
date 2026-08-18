@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const Parking = require("../models/Parking");
 const ParkingEvent = require("../models/ParkingEvent");
+const protect = require("../middleware/authMiddleware");
+const authorizeRoles = require("../middleware/roleMiddleware");
 
 function isValidType(type) {
   return ["visitor", "resident"].includes(type);
@@ -13,7 +15,7 @@ function calculateAvailable(totalSlot, usedSlot, maintenanceSlot) {
 }
 
 // POST /api/parking/setup
-router.post("/setup", async (req, res) => {
+router.post("/setup", protect, authorizeRoles("Admin", "Staff"), async (req, res) => {
   try {
     const { type, totalSlot, maintenanceSlot = 0 } = req.body;
 
@@ -82,7 +84,11 @@ router.get("/", async (req, res) => {
 });
 
 // GET /api/parking/events/history
-router.get("/events/history", async (req, res) => {
+router.get(
+  "/events/history",
+  protect,
+  authorizeRoles("Admin", "Staff"),
+  async (req, res) => {
   try {
     const { type, page = 1, limit = 50 } = req.query;
     const filter = {};
@@ -124,7 +130,8 @@ router.get("/events/history", async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
-});
+  },
+);
 
 // GET /api/parking/visitor
 // GET /api/parking/resident
@@ -159,7 +166,11 @@ router.get("/:type", async (req, res) => {
 
 // PATCH /api/parking/visitor/delta
 // PATCH /api/parking/resident/delta
-router.patch("/:type/delta", async (req, res) => {
+router.patch(
+  "/:type/delta",
+  protect,
+  authorizeRoles("Admin", "Staff"),
+  async (req, res) => {
   try {
     const { type } = req.params;
     const delta = Number(req.body.delta);
@@ -216,11 +227,16 @@ router.patch("/:type/delta", async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
-});
+  },
+);
 
 // PATCH /api/parking/visitor/reset
 // PATCH /api/parking/resident/reset
-router.patch("/:type/reset", async (req, res) => {
+router.patch(
+  "/:type/reset",
+  protect,
+  authorizeRoles("Admin", "Staff"),
+  async (req, res) => {
   try {
     const { type } = req.params;
 
@@ -261,6 +277,7 @@ router.patch("/:type/reset", async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
-});
+  },
+);
 
 module.exports = router;

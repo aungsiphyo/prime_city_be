@@ -1,650 +1,796 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link
-        href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=Jost:wght@200;300;400;500&display=swap"
-        rel="stylesheet">
-
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=Jost:wght@200;300;400;500&display=swap"
+      rel="stylesheet"
+    />
 
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <title>Visitor Reception Display</title>
     <style>
-        :root {
-            --ink: #1a1a2e;
-            --paper: #f5f0e8;
-            --gold: #b8860b;
-            --gold-lt: #d4a843;
-            --cream: #faf7f2;
-            --muted: #8a8070;
+      :root {
+        --ink: #1a1a2e;
+        --paper: #f5f0e8;
+        --gold: #b8860b;
+        --gold-lt: #d4a843;
+        --cream: #faf7f2;
+        --muted: #8a8070;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* ── Idle Screen ── */
+      #idle-screen {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: var(--ink);
+        transition: opacity 0.6s ease;
+      }
+
+      .idle-ring {
+        width: 180px;
+        height: 180px;
+        border-radius: 50%;
+        border: 1px solid rgba(184, 134, 11, 0.25);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        margin-bottom: 48px;
+        animation: ringPulse 3s ease-in-out infinite;
+      }
+
+      .idle-ring::before {
+        content: "";
+        position: absolute;
+        inset: 12px;
+        border-radius: 50%;
+        border: 1px solid rgba(184, 134, 11, 0.15);
+      }
+
+      .idle-ring::after {
+        content: "";
+        position: absolute;
+        inset: -20px;
+        border-radius: 50%;
+        border: 1px solid rgba(184, 134, 11, 0.08);
+      }
+
+      @keyframes ringPulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 1;
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        50% {
+          transform: scale(1.04);
+          opacity: 0.7;
+        }
+      }
+
+      .scan-icon {
+        width: 72px;
+        height: 72px;
+        stroke: var(--gold);
+        fill: none;
+        stroke-width: 1.2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .beam {
+        position: absolute;
+        left: 20px;
+        right: 20px;
+        height: 2px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--gold-lt),
+          transparent
+        );
+        top: 20px;
+        border-radius: 2px;
+        animation: beam 2.5s ease-in-out infinite;
+      }
+
+      @keyframes beam {
+        0% {
+          top: 20px;
+          opacity: 0;
         }
 
-        body {
-            background: var(--ink);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            height: 100vh;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        10% {
+          opacity: 1;
         }
 
-        /* ── Idle Screen ── */
-        #idle-screen {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: var(--ink);
-            transition: opacity 0.6s ease;
+        90% {
+          opacity: 1;
         }
 
-        .idle-ring {
-            width: 180px;
-            height: 180px;
-            border-radius: 50%;
-            border: 1px solid rgba(184, 134, 11, 0.25);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            margin-bottom: 48px;
-            animation: ringPulse 3s ease-in-out infinite;
+        100% {
+          top: calc(100% - 20px);
+          opacity: 0;
+        }
+      }
+
+      .idle-title {
+        font-size: 2.8rem;
+        font-weight: 300;
+        color: var(--paper);
+        letter-spacing: 0.08em;
+        text-align: center;
+        margin-bottom: 12px;
+        line-height: 1.2;
+      }
+
+      .idle-sub {
+        font-size: 0.85rem;
+        font-weight: 300;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--muted);
+        text-align: center;
+        margin-bottom: 48px;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--gold);
+        display: inline-block;
+        margin-right: 8px;
+        animation: blink 1.4s ease-in-out infinite;
+      }
+
+      @keyframes blink {
+        0%,
+        100% {
+          opacity: 1;
         }
 
-        .idle-ring::before {
-            content: '';
-            position: absolute;
-            inset: 12px;
-            border-radius: 50%;
-            border: 1px solid rgba(184, 134, 11, 0.15);
+        50% {
+          opacity: 0.2;
+        }
+      }
+
+      .status-text {
+        font-size: 0.75rem;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      /* ── QR Screen ── */
+      #qr-screen {
+        position: absolute;
+        inset: 0;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: var(--cream);
+        opacity: 0;
+        transition: opacity 0.5s ease;
+      }
+
+      #qr-screen.visible {
+        display: flex;
+        opacity: 1;
+      }
+
+      .qr-header {
+        text-align: center;
+        margin-bottom: 32px;
+      }
+
+      .qr-eyebrow {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: var(--gold);
+        margin-bottom: 10px;
+      }
+
+      .qr-title {
+        font-size: 3rem;
+        font-weight: 300;
+        color: var(--ink);
+        line-height: 1.1;
+        margin-bottom: 8px;
+      }
+
+      .qr-title em {
+        font-style: italic;
+        color: var(--gold);
+      }
+
+      .qr-desc {
+        font-size: 0.88rem;
+        color: var(--muted);
+      }
+
+      .qr-card {
+        background: #fff;
+        border: 1px solid rgba(184, 134, 11, 0.2);
+        border-radius: 20px;
+        padding: 28px;
+        box-shadow: 0 2px 8px rgba(26, 26, 46, 0.06),
+          0 20px 60px rgba(26, 26, 46, 0.12);
+        margin-bottom: 28px;
+        position: relative;
+        animation: cardIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+
+      @keyframes cardIn {
+        from {
+          transform: scale(0.85);
+          opacity: 0;
         }
 
-        .idle-ring::after {
-            content: '';
-            position: absolute;
-            inset: -20px;
-            border-radius: 50%;
-            border: 1px solid rgba(184, 134, 11, 0.08);
+        to {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      .qr-card::before,
+      .qr-card::after {
+        content: "";
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        border-color: var(--gold-lt);
+        border-style: solid;
+      }
+
+      .qr-card::before {
+        top: 12px;
+        left: 12px;
+        border-width: 2px 0 0 2px;
+        border-radius: 4px 0 0 0;
+      }
+
+      .qr-card::after {
+        bottom: 12px;
+        right: 12px;
+        border-width: 0 2px 2px 0;
+        border-radius: 0 0 4px 0;
+      }
+
+      #qr-image {
+        display: block;
+        width: 260px;
+        height: 260px;
+        object-fit: contain;
+        image-rendering: crisp-edges;
+        image-rendering: pixelated;
+      }
+
+      .countdown-wrap {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .countdown-ring {
+        position: relative;
+        width: 48px;
+        height: 48px;
+      }
+
+      .countdown-ring svg {
+        transform: rotate(-90deg);
+      }
+
+      .countdown-ring circle {
+        fill: none;
+        stroke-width: 3;
+      }
+
+      .ring-bg {
+        stroke: rgba(26, 26, 46, 0.08);
+      }
+
+      .ring-fill {
+        stroke: var(--gold);
+        stroke-linecap: round;
+        transition: stroke-dashoffset 1s linear;
+      }
+
+      .countdown-num {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: var(--ink);
+      }
+
+      .countdown-label {
+        font-size: 0.8rem;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      /* ── Success Flash ── */
+      #success-flash {
+        position: absolute;
+        inset: 0;
+        background: var(--cream);
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        z-index: 10;
+        animation: flashIn 0.4s ease;
+      }
+
+      @keyframes flashIn {
+        from {
+          opacity: 0;
         }
 
-        @keyframes ringPulse {
+        to {
+          opacity: 1;
+        }
+      }
 
-            0%,
-            100% {
-                transform: scale(1);
-                opacity: 1;
-            }
+      .success-check {
+        width: 80px;
+        height: 80px;
+        border: 2px solid var(--gold);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 24px;
+        animation: popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
 
-            50% {
-                transform: scale(1.04);
-                opacity: 0.7;
-            }
+      @keyframes popIn {
+        from {
+          transform: scale(0.5);
         }
 
-        .scan-icon {
-            width: 72px;
-            height: 72px;
-            stroke: var(--gold);
-            fill: none;
-            stroke-width: 1.2;
-            stroke-linecap: round;
-            stroke-linejoin: round;
+        to {
+          transform: scale(1);
         }
+      }
 
-        .beam {
-            position: absolute;
-            left: 20px;
-            right: 20px;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, var(--gold-lt), transparent);
-            top: 20px;
-            border-radius: 2px;
-            animation: beam 2.5s ease-in-out infinite;
-        }
+      .success-check svg {
+        width: 36px;
+        height: 36px;
+        stroke: var(--gold);
+        fill: none;
+        stroke-width: 2;
+      }
 
-        @keyframes beam {
-            0% {
-                top: 20px;
-                opacity: 0;
-            }
+      #success-name {
+        font-size: 2.4rem;
+        font-weight: 300;
+        color: var(--ink);
+        margin-bottom: 8px;
+      }
 
-            10% {
-                opacity: 1;
-            }
+      #success-badge {
+        font-size: 0.8rem;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--gold);
+      }
 
-            90% {
-                opacity: 1;
-            }
+      #success-details {
+        width: min(560px, 82vw);
+        margin-top: 26px;
+        display: none;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
 
-            100% {
-                top: calc(100% - 20px);
-                opacity: 0;
-            }
-        }
+      .visitor-detail {
+        padding: 14px 16px;
+        border: 1px solid rgba(184, 134, 11, 0.2);
+        border-radius: 12px;
+        background: #fff;
+      }
 
-        .idle-title {
-            font-size: 2.8rem;
-            font-weight: 300;
-            color: var(--paper);
-            letter-spacing: 0.08em;
-            text-align: center;
-            margin-bottom: 12px;
-            line-height: 1.2;
-        }
+      .visitor-detail span {
+        display: block;
+      }
+      .visitor-detail-label {
+        color: var(--muted);
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+      }
+      .visitor-detail-value {
+        color: var(--ink);
+        font-size: 1rem;
+      }
 
-        .idle-sub {
-            font-size: 0.85rem;
-            font-weight: 300;
-            letter-spacing: 0.22em;
-            text-transform: uppercase;
-            color: var(--muted);
-            text-align: center;
-            margin-bottom: 48px;
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--gold);
-            display: inline-block;
-            margin-right: 8px;
-            animation: blink 1.4s ease-in-out infinite;
-        }
-
-        @keyframes blink {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.2;
-            }
-        }
-
-        .status-text {
-            font-size: 0.75rem;
-            letter-spacing: 0.15em;
-            text-transform: uppercase;
-            color: var(--muted);
-        }
-
-        /* ── QR Screen ── */
-        #qr-screen {
-            position: absolute;
-            inset: 0;
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: var(--cream);
-            opacity: 0;
-            transition: opacity 0.5s ease;
-        }
-
-        #qr-screen.visible {
-            display: flex;
-            opacity: 1;
-        }
-
-        .qr-header {
-            text-align: center;
-            margin-bottom: 32px;
-        }
-
-        .qr-eyebrow {
-            font-size: 0.72rem;
-            font-weight: 600;
-            letter-spacing: 0.28em;
-            text-transform: uppercase;
-            color: var(--gold);
-            margin-bottom: 10px;
-        }
-
-        .qr-title {
-            font-size: 3rem;
-            font-weight: 300;
-            color: var(--ink);
-            line-height: 1.1;
-            margin-bottom: 8px;
-        }
-
-        .qr-title em {
-            font-style: italic;
-            color: var(--gold);
-        }
-
-        .qr-desc {
-            font-size: 0.88rem;
-            color: var(--muted);
-        }
-
-        .qr-card {
-            background: #fff;
-            border: 1px solid rgba(184, 134, 11, 0.2);
-            border-radius: 20px;
-            padding: 28px;
-            box-shadow: 0 2px 8px rgba(26, 26, 46, 0.06), 0 20px 60px rgba(26, 26, 46, 0.12);
-            margin-bottom: 28px;
-            position: relative;
-            animation: cardIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        @keyframes cardIn {
-            from {
-                transform: scale(0.85);
-                opacity: 0;
-            }
-
-            to {
-                transform: scale(1);
-                opacity: 1;
-            }
-        }
-
-        .qr-card::before,
-        .qr-card::after {
-            content: '';
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            border-color: var(--gold-lt);
-            border-style: solid;
-        }
-
-        .qr-card::before {
-            top: 12px;
-            left: 12px;
-            border-width: 2px 0 0 2px;
-            border-radius: 4px 0 0 0;
-        }
-
-        .qr-card::after {
-            bottom: 12px;
-            right: 12px;
-            border-width: 0 2px 2px 0;
-            border-radius: 0 0 4px 0;
-        }
-
-        #qr-image {
-            display: block;
-            width: 260px;
-            height: 260px;
-            object-fit: contain;
-            image-rendering: crisp-edges;
-            image-rendering: pixelated;
-        }
-
-        .countdown-wrap {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-        }
-
-        .countdown-ring {
-            position: relative;
-            width: 48px;
-            height: 48px;
-        }
-
-        .countdown-ring svg {
-            transform: rotate(-90deg);
-        }
-
-        .countdown-ring circle {
-            fill: none;
-            stroke-width: 3;
-        }
-
-        .ring-bg {
-            stroke: rgba(26, 26, 46, 0.08);
-        }
-
-        .ring-fill {
-            stroke: var(--gold);
-            stroke-linecap: round;
-            transition: stroke-dashoffset 1s linear;
-        }
-
-        .countdown-num {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.85rem;
-            font-weight: 500;
-            color: var(--ink);
-        }
-
-        .countdown-label {
-            font-size: 0.8rem;
-            letter-spacing: 0.08em;
-            color: var(--muted);
-        }
-
-        /* ── Success Flash ── */
-        #success-flash {
-            position: absolute;
-            inset: 0;
-            background: var(--cream);
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            z-index: 10;
-            animation: flashIn 0.4s ease;
-        }
-
-        @keyframes flashIn {
-            from {
-                opacity: 0;
-            }
-
-            to {
-                opacity: 1;
-            }
-        }
-
-        .success-check {
-            width: 80px;
-            height: 80px;
-            border: 2px solid var(--gold);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 24px;
-            animation: popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        @keyframes popIn {
-            from {
-                transform: scale(0.5);
-            }
-
-            to {
-                transform: scale(1);
-            }
-        }
-
-        .success-check svg {
-            width: 36px;
-            height: 36px;
-            stroke: var(--gold);
-            fill: none;
-            stroke-width: 2;
-        }
-
-        #success-name {
-            font-size: 2.4rem;
-            font-weight: 300;
-            color: var(--ink);
-            margin-bottom: 8px;
-        }
-
-        #success-badge {
-            font-size: 0.8rem;
-            letter-spacing: 0.2em;
-            text-transform: uppercase;
-            color: var(--gold);
-        }
-
-        /* ── Clock ── */
-        .clock {
-            position: fixed;
-            top: 28px;
-            right: 36px;
-            font-size: 0.8rem;
-            font-weight: 300;
-            letter-spacing: 0.15em;
-            color: rgba(255, 255, 255, 0.25);
-        }
+      /* ── Clock ── */
+      .clock {
+        position: fixed;
+        top: 28px;
+        right: 36px;
+        font-size: 0.8rem;
+        font-weight: 300;
+        letter-spacing: 0.15em;
+        color: rgba(255, 255, 255, 0.25);
+      }
     </style>
-</head>
+  </head>
 
-<body>
-
+  <body>
     <div class="clock" id="clock">00:00</div>
 
     <!-- IDLE SCREEN -->
     <div id="idle-screen">
-        <div class="idle-ring">
-            <div class="beam"></div>
-            <svg class="scan-icon" viewBox="0 0 64 64">
-                <rect x="8" y="8" width="20" height="20" rx="2" />
-                <rect x="36" y="8" width="20" height="20" rx="2" />
-                <rect x="8" y="36" width="20" height="20" rx="2" />
-                <rect x="12" y="12" width="12" height="12" rx="1" fill="rgba(184,134,11,0.35)" stroke="none" />
-                <rect x="40" y="12" width="12" height="12" rx="1" fill="rgba(184,134,11,0.35)" stroke="none" />
-                <rect x="12" y="40" width="12" height="12" rx="1" fill="rgba(184,134,11,0.35)" stroke="none" />
-                <line x1="36" y1="40" x2="56" y2="40" />
-                <line x1="36" y1="48" x2="56" y2="48" />
-                <line x1="36" y1="56" x2="56" y2="56" />
-                <line x1="44" y1="36" x2="44" y2="56" />
-                <line x1="52" y1="36" x2="52" y2="56" />
-            </svg>
-        </div>
-        <h1 class="idle-title">Please Show<br>Your Badge</h1>
-        <p class="idle-sub">Hold QR code towards the camera</p>
-        <div>
-            <span class="status-dot"></span>
-            <span class="status-text">Scanner active</span>
-        </div>
+      <div class="idle-ring">
+        <div class="beam"></div>
+        <svg class="scan-icon" viewBox="0 0 64 64">
+          <rect x="8" y="8" width="20" height="20" rx="2" />
+          <rect x="36" y="8" width="20" height="20" rx="2" />
+          <rect x="8" y="36" width="20" height="20" rx="2" />
+          <rect
+            x="12"
+            y="12"
+            width="12"
+            height="12"
+            rx="1"
+            fill="rgba(184,134,11,0.35)"
+            stroke="none"
+          />
+          <rect
+            x="40"
+            y="12"
+            width="12"
+            height="12"
+            rx="1"
+            fill="rgba(184,134,11,0.35)"
+            stroke="none"
+          />
+          <rect
+            x="12"
+            y="40"
+            width="12"
+            height="12"
+            rx="1"
+            fill="rgba(184,134,11,0.35)"
+            stroke="none"
+          />
+          <line x1="36" y1="40" x2="56" y2="40" />
+          <line x1="36" y1="48" x2="56" y2="48" />
+          <line x1="36" y1="56" x2="56" y2="56" />
+          <line x1="44" y1="36" x2="44" y2="56" />
+          <line x1="52" y1="36" x2="52" y2="56" />
+        </svg>
+      </div>
+      <h1 class="idle-title">Please Show<br />Your Badge</h1>
+      <p class="idle-sub">Hold QR code towards the camera</p>
+      <div>
+        <span class="status-dot"></span>
+        <span class="status-text">Scanner active</span>
+      </div>
     </div>
 
     <!-- QR SCREEN -->
     <div id="qr-screen">
-        <div id="success-flash">
-            <div class="success-check">
-                <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                </svg>
-            </div>
-            <div id="success-name">Welcome!</div>
-            <div id="success-badge"></div>
+      <div id="success-flash">
+        <div class="success-check">
+          <svg
+            viewBox="0 0 24 24"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
         </div>
+        <div id="success-name">Welcome!</div>
+        <div id="success-badge"></div>
+        <div id="success-details">
+          <div class="visitor-detail">
+            <span class="visitor-detail-label">Host</span
+            ><span class="visitor-detail-value" id="visitor-host"></span>
+          </div>
+          <div class="visitor-detail">
+            <span class="visitor-detail-label">Room</span
+            ><span class="visitor-detail-value" id="visitor-room"></span>
+          </div>
+          <div class="visitor-detail">
+            <span class="visitor-detail-label">Purpose</span
+            ><span class="visitor-detail-value" id="visitor-purpose"></span>
+          </div>
+          <div class="visitor-detail">
+            <span class="visitor-detail-label">Status</span
+            ><span class="visitor-detail-value">Pre-registered · Verified</span>
+          </div>
+        </div>
+      </div>
 
-        <div class="qr-header">
-            <div class="qr-eyebrow">Visitor Check-In</div>
-            <h2 class="qr-title">Scan to <em>Register</em></h2>
-            <p class="qr-desc">Point your phone camera at the QR code below</p>
-        </div>
+      <div class="qr-header">
+        <div class="qr-eyebrow">Visitor Check-In</div>
+        <h2 class="qr-title">Scan to <em>Register</em></h2>
+        <p class="qr-desc">Point your phone camera at the QR code below</p>
+      </div>
 
-        <div class="qr-card">
-            <img id="qr-image" alt="Registration QR code">
-        </div>
+      <div class="qr-card">
+        <img id="qr-image" alt="Registration QR code" />
+      </div>
 
-        <div class="countdown-wrap">
-            <div class="countdown-ring">
-                <svg width="48" height="48" viewBox="0 0 48 48">
-                    <circle class="ring-bg" cx="24" cy="24" r="20" />
-                    <circle class="ring-fill" cx="24" cy="24" r="20" id="ring-fill" stroke-dasharray="125.66"
-                        stroke-dashoffset="0" />
-                </svg>
-                <div class="countdown-num" id="countdown-num">—</div>
-            </div>
-            <span class="countdown-label">seconds remaining</span>
+      <div class="countdown-wrap">
+        <div class="countdown-ring">
+          <svg width="48" height="48" viewBox="0 0 48 48">
+            <circle class="ring-bg" cx="24" cy="24" r="20" />
+            <circle
+              class="ring-fill"
+              cx="24"
+              cy="24"
+              r="20"
+              id="ring-fill"
+              stroke-dasharray="125.66"
+              stroke-dashoffset="0"
+            />
+          </svg>
+          <div class="countdown-num" id="countdown-num">—</div>
         </div>
+        <span class="countdown-label">seconds remaining</span>
+      </div>
     </div>
 
     <script>
-        const FALLBACK_REGISTER_URL = window.location.origin + '/register';
-        const CIRCUMFERENCE = 2 * Math.PI * 20;
+      const FALLBACK_REGISTER_URL = window.location.origin + "/register";
+      const CIRCUMFERENCE = 2 * Math.PI * 20;
 
-        // ── Clock ────────────────────────────────────────────────────────────────
-        function updateClock() {
-            document.getElementById('clock').textContent =
-                new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      // ── Clock ────────────────────────────────────────────────────────────────
+      function updateClock() {
+        document.getElementById("clock").textContent =
+          new Date().toLocaleTimeString("en-GB", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+      }
+      updateClock();
+      setInterval(updateClock, 30000);
+
+      // ── State ────────────────────────────────────────────────────────────────
+      let countdownInterval = null;
+      let timeoutHandle = null;
+      let successTimeout = null;
+      let eventSource = null;
+      let reconnectTimer = null;
+      let registerUrl = FALLBACK_REGISTER_URL;
+
+      // ── SSE — listen for ESP32 events ────────────────────────────────────────
+      function scheduleReconnect() {
+        if (reconnectTimer) return;
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          connectSSE();
+        }, 3000);
+      }
+
+      function connectSSE() {
+        if (eventSource) {
+          eventSource.close();
         }
-        updateClock();
-        setInterval(updateClock, 30000);
 
-        // ── State ────────────────────────────────────────────────────────────────
-        let countdownInterval = null;
-        let timeoutHandle = null;
-        let successTimeout = null;
-        let eventSource = null;
-        let reconnectTimer = null;
-        let registerUrl = FALLBACK_REGISTER_URL;
+        const es = new EventSource("/api/events");
+        eventSource = es;
 
-        // ── SSE — listen for ESP32 events ────────────────────────────────────────
-        function scheduleReconnect() {
-            if (reconnectTimer) return;
-            reconnectTimer = setTimeout(() => {
-                reconnectTimer = null;
-                connectSSE();
-            }, 3000);
-        }
-
-        function connectSSE() {
-            if (eventSource) {
-                eventSource.close();
+        es.addEventListener("connected", (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.registrationUrl) {
+              registerUrl = data.registrationUrl;
             }
+            console.info("SSE connected");
+          } catch (err) {
+            console.error("connected parse error", err);
+          }
+        });
 
-            const es = new EventSource('/api/events');
-            eventSource = es;
+        es.addEventListener("unlock", (e) => {
+          try {
+            const { url, timeout } = JSON.parse(e.data);
+            showQR(url || registerUrl || FALLBACK_REGISTER_URL, timeout || 120);
+          } catch (err) {
+            console.error("unlock parse error", err);
+          }
+        });
 
-            es.addEventListener('connected', e => {
-                try {
-                    const data = JSON.parse(e.data);
-                    if (data.registrationUrl) {
-                        registerUrl = data.registrationUrl;
-                    }
-                    console.info('SSE connected');
-                } catch (err) {
-                    console.error('connected parse error', err);
-                }
-            });
+        es.addEventListener("registered", (e) => {
+          try {
+            const { name, badge } = JSON.parse(e.data);
+            showSuccess(name, badge);
+          } catch (err) {
+            console.error("registered parse error", err);
+          }
+        });
 
-            es.addEventListener('unlock', e => {
-                try {
-                    const { url, timeout } = JSON.parse(e.data);
-                    showQR(url || registerUrl || FALLBACK_REGISTER_URL, timeout || 120);
-                } catch (err) { console.error('unlock parse error', err); }
-            });
+        es.addEventListener("pre_registered_visitor", (e) => {
+          try {
+            showPreRegisteredVisitor(JSON.parse(e.data));
+          } catch (err) {
+            console.error("pre-registered visitor parse error", err);
+          }
+        });
 
-            es.addEventListener('registered', e => {
-                try {
-                    const { name, badge } = JSON.parse(e.data);
-                    showSuccess(name, badge);
-                } catch (err) { console.error('registered parse error', err); }
-            });
+        es.onerror = () => {
+          console.warn("SSE disconnected, reconnecting in 3s...");
+          es.close();
+          if (eventSource === es) {
+            eventSource = null;
+          }
+          scheduleReconnect();
+        };
+      }
+      connectSSE();
 
-            es.onerror = () => {
-                console.warn('SSE disconnected, reconnecting in 3s...');
-                es.close();
-                if (eventSource === es) {
-                    eventSource = null;
-                }
-                scheduleReconnect();
-            };
+      // ── Show QR ──────────────────────────────────────────────────────────────
+      function showQR(url, seconds) {
+        clearCountdown();
+        if (successTimeout) {
+          clearTimeout(successTimeout);
+          successTimeout = null;
         }
-        connectSSE();
 
-        // ── Show QR ──────────────────────────────────────────────────────────────
-        function showQR(url, seconds) {
+        const qrImage = document.getElementById("qr-image");
+        if (!qrImage) return console.error("QR image element not found");
+
+        qrImage.src = `/api/qr-image?size=260&text=${encodeURIComponent(
+          url
+        )}&t=${Date.now()}`;
+        qrImage.onload = () => console.log("QR Generated for:", url);
+        qrImage.onerror = () => console.error("QR image load error");
+        // Transition to QR screen
+        const idle = document.getElementById("idle-screen");
+        const qrScreen = document.getElementById("qr-screen");
+        document.getElementById("success-flash").style.display = "none";
+        idle.style.opacity = "0";
+        setTimeout(() => {
+          idle.style.display = "none";
+          qrScreen.style.display = "flex";
+          // Force reflow so transition fires
+          qrScreen.getBoundingClientRect();
+          qrScreen.classList.add("visible");
+        }, 500);
+
+        startCountdown(seconds);
+      }
+
+      // ── Countdown ────────────────────────────────────────────────────────────
+      function startCountdown(total) {
+        clearCountdown();
+
+        const safeTotal = Math.max(1, Number(total) || 120);
+        let remaining = safeTotal;
+        const numEl = document.getElementById("countdown-num");
+        const ringEl = document.getElementById("ring-fill");
+
+        function tick() {
+          numEl.textContent = remaining;
+          ringEl.style.strokeDashoffset =
+            CIRCUMFERENCE * (1 - remaining / safeTotal);
+          if (remaining <= 0) {
             clearCountdown();
-            if (successTimeout) {
-                clearTimeout(successTimeout);
-                successTimeout = null;
-            }
-
-            const qrImage = document.getElementById('qr-image');
-            if (!qrImage) return console.error("QR image element not found");
-
-            qrImage.src = `/api/qr-image?size=260&text=${encodeURIComponent(url)}&t=${Date.now()}`;
-            qrImage.onload = () => console.log("QR Generated for:", url);
-            qrImage.onerror = () => console.error('QR image load error');
-            // Transition to QR screen
-            const idle = document.getElementById('idle-screen');
-            const qrScreen = document.getElementById('qr-screen');
-            document.getElementById('success-flash').style.display = 'none';
-            idle.style.opacity = '0';
-            setTimeout(() => {
-                idle.style.display = 'none';
-                qrScreen.style.display = 'flex';
-                // Force reflow so transition fires
-                qrScreen.getBoundingClientRect();
-                qrScreen.classList.add('visible');
-            }, 500);
-
-            startCountdown(seconds);
+            returnToIdle();
+          }
+          remaining--;
         }
+        tick();
+        countdownInterval = setInterval(tick, 1000);
+        timeoutHandle = setTimeout(returnToIdle, (safeTotal + 1) * 1000);
+      }
 
-        // ── Countdown ────────────────────────────────────────────────────────────
-        function startCountdown(total) {
-            clearCountdown();
-
-            const safeTotal = Math.max(1, Number(total) || 120);
-            let remaining = safeTotal;
-            const numEl = document.getElementById('countdown-num');
-            const ringEl = document.getElementById('ring-fill');
-
-            function tick() {
-                numEl.textContent = remaining;
-                ringEl.style.strokeDashoffset = CIRCUMFERENCE * (1 - remaining / safeTotal);
-                if (remaining <= 0) { clearCountdown(); returnToIdle(); }
-                remaining--;
-            }
-            tick();
-            countdownInterval = setInterval(tick, 1000);
-            timeoutHandle = setTimeout(returnToIdle, (safeTotal + 1) * 1000);
+      function clearCountdown() {
+        if (countdownInterval) {
+          clearInterval(countdownInterval);
+          countdownInterval = null;
         }
-
-        function clearCountdown() {
-            if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
-            if (timeoutHandle) { clearTimeout(timeoutHandle); timeoutHandle = null; }
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = null;
         }
+      }
 
-        // ── Return to idle ───────────────────────────────────────────────────────
-        function returnToIdle() {
-            clearCountdown();
-            if (successTimeout) {
-                clearTimeout(successTimeout);
-                successTimeout = null;
-            }
-            const qrScreen = document.getElementById('qr-screen');
-            const idle = document.getElementById('idle-screen');
-            qrScreen.classList.remove('visible');
-            setTimeout(() => {
-                qrScreen.style.display = 'none';
-                document.getElementById('success-flash').style.display = 'none';
-                idle.style.display = 'flex';
-                // Force reflow
-                idle.getBoundingClientRect();
-                idle.style.opacity = '1';
-            }, 500);
+      // ── Return to idle ───────────────────────────────────────────────────────
+      function returnToIdle() {
+        clearCountdown();
+        if (successTimeout) {
+          clearTimeout(successTimeout);
+          successTimeout = null;
         }
+        const qrScreen = document.getElementById("qr-screen");
+        const idle = document.getElementById("idle-screen");
+        qrScreen.classList.remove("visible");
+        setTimeout(() => {
+          qrScreen.style.display = "none";
+          document.getElementById("success-flash").style.display = "none";
+          idle.style.display = "flex";
+          // Force reflow
+          idle.getBoundingClientRect();
+          idle.style.opacity = "1";
+        }, 500);
+      }
 
-        // ── Show success ─────────────────────────────────────────────────────────
-        function showSuccess(name, badge) {
-            clearCountdown();
-            document.getElementById('success-name').textContent = `Welcome, ${name}!`;
-            document.getElementById('success-badge').textContent = badge ? `Badge ${badge}` : '';
-            const flash = document.getElementById('success-flash');
-            flash.style.display = 'flex';
-            successTimeout = setTimeout(() => {
-                flash.style.display = 'none';
-                successTimeout = null;
-                returnToIdle();
-            }, 5000);
-        }
+      // ── Show success ─────────────────────────────────────────────────────────
+      function showSuccess(name, badge) {
+        clearCountdown();
+        document.getElementById("success-details").style.display = "none";
+        document.getElementById(
+          "success-name"
+        ).textContent = `Welcome, ${name}!`;
+        document.getElementById("success-badge").textContent = badge
+          ? `Badge ${badge}`
+          : "";
+        const flash = document.getElementById("success-flash");
+        flash.style.display = "flex";
+        successTimeout = setTimeout(() => {
+          flash.style.display = "none";
+          successTimeout = null;
+          returnToIdle();
+        }, 5000);
+      }
+
+      function showPreRegisteredVisitor(data) {
+        clearCountdown();
+        if (successTimeout) clearTimeout(successTimeout);
+        const idle = document.getElementById("idle-screen");
+        const qrScreen = document.getElementById("qr-screen");
+        idle.style.display = "none";
+        idle.style.opacity = "0";
+        qrScreen.style.display = "flex";
+        qrScreen.getBoundingClientRect();
+        qrScreen.classList.add("visible");
+        document.getElementById("success-name").textContent = `Welcome, ${
+          data.name || "Visitor"
+        }!`;
+        document.getElementById("success-badge").textContent = data.badge
+          ? `Badge ${data.badge}`
+          : "Pre-registered visitor";
+        document.getElementById("visitor-host").textContent =
+          data.host || "Prime City resident";
+        document.getElementById("visitor-room").textContent =
+          data.room || "Reception";
+        document.getElementById("visitor-purpose").textContent =
+          data.purpose || "General";
+        document.getElementById("success-details").style.display = "grid";
+        document.getElementById("success-flash").style.display = "flex";
+        successTimeout = setTimeout(() => {
+          successTimeout = null;
+          returnToIdle();
+        }, 10000);
+      }
     </script>
-</body>
-
+  </body>
 </html>

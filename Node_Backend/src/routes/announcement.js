@@ -5,6 +5,7 @@ const Notification = require("../models/Notification");
 const Room = require("../models/Room");
 const User = require("../models/User");
 const protect = require("../middleware/authMiddleware");
+const optionalAuth = require("../middleware/optionalAuthMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
 const { resolveCurrentRoom } = require("../services/aiTools.service");
 const { recordAdminAudit } = require("../services/audit.service");
@@ -145,15 +146,27 @@ function residentAudienceFilter(room) {
   };
 }
 
-router.get("/", protect, async (req, res) => {
+function versionOnePublicAudienceFilter() {
+  return {
+    $or: [
+      { audience_type: "All Residents" },
+      { audience_type: { $exists: false } },
+    ],
+  };
+}
+
+router.get("/", optionalAuth, async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const { type, q, status } = req.query;
-    const currentUser = await User.findById(getUserId(req))
-      .select("_id role room_id")
-      .lean();
-    if (!currentUser) {
+    const authenticatedUserId = getUserId(req);
+    const currentUser = authenticatedUserId
+      ? await User.findById(authenticatedUserId)
+          .select("_id role room_id")
+          .lean()
+      : null;
+    if (authenticatedUserId && !currentUser) {
       return res.status(401).json({ success: false, message: "User not found" });
     }
 
@@ -163,7 +176,12 @@ router.get("/", protect, async (req, res) => {
       filters.push({ $or: [{ title: regex }, { message: regex }] });
     }
 
-    if (["Admin", "Staff"].includes(currentUser.role)) {
+    if (!currentUser) {
+      // Version 1 clients did not attach Authorization to announcement reads.
+      // Keep that installed build working without exposing targeted notices.
+      filters.push(legacyActiveFilter());
+      filters.push(versionOnePublicAudienceFilter());
+    } else if (["Admin", "Staff"].includes(currentUser.role)) {
       if (status) filters.push({ status });
       else if (req.query.include_archived !== "true") {
         filters.push({

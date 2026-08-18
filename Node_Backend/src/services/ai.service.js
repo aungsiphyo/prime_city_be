@@ -665,7 +665,9 @@ async function manualToolContext(message, user) {
       text.includes("how many") ||
       text.includes("ကျန်") ||
       text.includes("လွတ်") ||
-      text.includes("ဘယ်နှစ်"));
+      text.includes("ဘယ်နှစ်") ||
+      text.includes("ဘယ်နှ") ||
+      text.includes("ဘယ်လောက်"));
 
   if (asksRoomAvailability) {
     const result = await runTool("getRoomAvailability", {}, user);

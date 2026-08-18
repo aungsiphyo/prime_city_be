@@ -25,6 +25,12 @@ const UserSchema = new mongoose.Schema({
     index: true,
     set: normalizeRfidUid,
   },
+  card_status: {
+    type: String,
+    enum: ["unassigned", "active", "lost", "suspended"],
+    default: "unassigned",
+    index: true,
+  },
   fullname: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   phone: { type: String, required: true },

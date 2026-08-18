@@ -30,6 +30,11 @@ test("resident population questions use aggregate database tool", () => {
   assert.equal(intent.toolName, "getResidentPopulation");
 });
 
+test("Myanmar room-count wording uses live room availability totals", () => {
+  const intent = classifyIntent("Prime City မှာ အခန်း ဘယ်နှခန်းရှိလဲ");
+  assert.equal(intent.toolName, "getRoomAvailability");
+});
+
 test("weather questions use live weather tool", () => {
   const intent = classifyIntent("ဒီနေ့ ရာသီဥတု ဘယ်လိုလဲ");
   assert.equal(intent.toolName, "getWeather");

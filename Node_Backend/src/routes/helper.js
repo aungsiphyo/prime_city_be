@@ -1,6 +1,11 @@
 const express = require("express");
 const router = express.Router();
 const Helper = require("../models/Helper");
+const { getHelperCatalog } = require("../services/communityCatalog.service");
+
+router.get("/catalog", (_req, res) => {
+  res.json({ success: true, data: getHelperCatalog() });
+});
 
 router.get("/", async (req, res) => {
   try {

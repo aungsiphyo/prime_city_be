@@ -9,6 +9,11 @@ const os = require("os");
 const QRCode = require("qrcode");
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
+const Visitor = require("./src/models/Visitor");
+const {
+  verifyVisitorQrToken,
+  createVisitorQrImageDataUrl,
+} = require("./src/services/visitorQr.service");
 const setupMQTT = require("./src/services/mqtt");
 const {
   startMonthlyBillingScheduler,
@@ -79,7 +84,7 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     credentials: true,
-  }),
+  })
 );
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -89,7 +94,7 @@ mongoose
     process.env.MONGO_URI,
     process.env.MONGO_DB_NAME
       ? { dbName: process.env.MONGO_DB_NAME.trim() }
-      : undefined,
+      : undefined
   )
   .then(() => {
     console.log("✅ MongoDB Connected");
@@ -133,7 +138,7 @@ app.get("/api/events", (req, res) => {
       ok: true,
       registrationUrl: getRegistrationFormUrl(req),
       timestamp: new Date().toISOString(),
-    })}\n\n`,
+    })}\n\n`
   );
 
   const keepAlive = setInterval(() => {
@@ -173,7 +178,7 @@ function broadcastSSE(event, data) {
   }
 }
 
-app.post("/api/qr-scan", (req, res) => {
+app.post("/api/qr-scan", async (req, res) => {
   const { token } = req.body;
 
   if (!token) {
@@ -183,35 +188,139 @@ app.post("/api/qr-scan", (req, res) => {
     });
   }
 
-  if (token !== VALID_QR_TOKEN) {
-    console.log("❌ Invalid badge token received");
-    return res.status(401).json({
-      success: false,
-      message: "Invalid token",
-    });
-  }
+  if (token === VALID_QR_TOKEN) {
+    console.log(
+      "✅ Valid visitor badge scanned — broadcasting unlock to display"
+    );
 
-  console.log(
-    "✅ Valid visitor badge scanned — broadcasting unlock to display",
-  );
-
-  broadcastSSE("unlock", {
-    url: getRegistrationFormUrl(req),
-    timeout: UNLOCK_TIMEOUT,
-    timestamp: new Date().toISOString(),
-  });
-
-  const io = app.get("io");
-  if (io) {
-    io.emit("visitor:badge-scanned", {
+    broadcastSSE("unlock", {
+      url: getRegistrationFormUrl(req),
+      timeout: UNLOCK_TIMEOUT,
       timestamp: new Date().toISOString(),
     });
+
+    const io = app.get("io");
+    if (io) {
+      io.emit("visitor:badge-scanned", {
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    return res.json({
+      success: true,
+      mode: "walk_in",
+      message: "Display unlocked",
+    });
   }
 
-  return res.json({
-    success: true,
-    message: "Display unlocked",
-  });
+  try {
+    const payload = verifyVisitorQrToken(token);
+    const now = new Date();
+    const visitor = await Visitor.findOneAndUpdate(
+      {
+        _id: payload.vid,
+        pre_registration_qr_id: payload.qid,
+        registration_type: "PreRegistered",
+        qr_status: "Active",
+        qr_valid_from: { $lte: now },
+        qr_expires_at: { $gte: now },
+      },
+      {
+        $set: {
+          qr_status: "Used",
+          gate_scanned_at: now,
+          check_in_time: now,
+        },
+        $inc: { gate_scan_count: 1 },
+      },
+      { new: true }
+    )
+      .populate("target_room_id", "room_name building floor")
+      .lean();
+
+    if (!visitor) {
+      const existing = await Visitor.findById(payload.vid)
+        .select("qr_status qr_expires_at")
+        .lean();
+      const message =
+        existing?.qr_status === "Used"
+          ? "Visitor pass has already been used"
+          : existing?.qr_expires_at && existing.qr_expires_at < now
+          ? "Visitor pass has expired"
+          : "Visitor pass is invalid or inactive";
+      return res.status(existing?.qr_status === "Used" ? 409 : 401).json({
+        success: false,
+        message,
+      });
+    }
+
+    const displayData = {
+      name: visitor.fullname,
+      badge: visitor.badgeNumber,
+      purpose: visitor.purpose,
+      purposeDetail: visitor.purposeDetail || visitor.reason_for_visit || "",
+      host: visitor.hostName,
+      room: visitor.target_room_id?.room_name || "Reception",
+      visitDate: visitor.visitDate,
+      checkedInAt: visitor.gate_scanned_at,
+    };
+    broadcastSSE("pre_registered_visitor", displayData);
+    app.get("io")?.emit("visitor:pre-registered-checkin", {
+      visitor_id: visitor._id,
+      ...displayData,
+    });
+    return res.json({
+      success: true,
+      mode: "pre_registered",
+      message: "Pre-registered visitor verified",
+      data: displayData,
+    });
+  } catch (error) {
+    console.warn("Visitor pass rejected:", error.message);
+    return res.status(error.code === "EXPIRED" ? 410 : 401).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+app.post("/api/visitor-pass/preview", async (req, res) => {
+  try {
+    const token = String(req.body.token || "").trim();
+    const payload = verifyVisitorQrToken(token);
+    const visitor = await Visitor.findOne({
+      _id: payload.vid,
+      pre_registration_qr_id: payload.qid,
+      registration_type: "PreRegistered",
+      qr_status: "Active",
+      qr_valid_from: { $lte: new Date() },
+      qr_expires_at: { $gte: new Date() },
+    })
+      .select("fullname badgeNumber purpose visitDate qr_expires_at")
+      .lean();
+    if (!visitor) {
+      return res.status(410).json({
+        success: false,
+        message: "This visitor pass is used, expired, revoked, or inactive",
+      });
+    }
+    return res.json({
+      success: true,
+      data: {
+        name: visitor.fullname,
+        badge: visitor.badgeNumber,
+        purpose: visitor.purpose,
+        visitDate: visitor.visitDate,
+        expiresAt: visitor.qr_expires_at,
+        qr_image_data_url: await createVisitorQrImageDataUrl(token),
+      },
+    });
+  } catch (error) {
+    return res.status(error.code === "EXPIRED" ? 410 : 401).json({
+      success: false,
+      message: error.message,
+    });
+  }
 });
 
 app.get("/api/qr-image", async (req, res) => {
@@ -292,13 +401,19 @@ app.use("/api/audit-logs", require("./src/routes/audit.routes"));
 app.use("/api/ai", require("./src/routes/ai.routes"));
 app.use("/api/mcp", require("./src/routes/mcp.routes"));
 app.use("/api/rfid", require("./src/routes/rfid.routes"));
+app.use("/api/rfid-wallet", require("./src/routes/rfidWallet"));
+app.use("/api/playground", require("./src/routes/playground"));
 
 app.get("/display", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "display.html")),
+  res.sendFile(path.join(__dirname, "public", "display.html"))
+);
+
+app.get("/visitor-pass", (req, res) =>
+  res.sendFile(path.join(__dirname, "public", "visitor-pass.html"))
 );
 
 app.get("/register", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "register.html")),
+  res.sendFile(path.join(__dirname, "public", "register.html"))
 );
 
 app.get("/", (req, res) => res.send("🚀 API Running..."));
@@ -310,7 +425,7 @@ app.get("/health", (req, res) =>
     uptime: process.uptime(),
     registrationUrl: getRegistrationFormUrl(req),
     sseClients: sseClients.size,
-  }),
+  })
 );
 
 const server = http.createServer(app);
@@ -330,7 +445,10 @@ io.use((socket, next) => {
   try {
     const authToken =
       socket.handshake.auth?.token ||
-      String(socket.handshake.headers?.authorization || "").replace(/^Bearer\s+/i, "");
+      String(socket.handshake.headers?.authorization || "").replace(
+        /^Bearer\s+/i,
+        ""
+      );
     if (!authToken) return next(new Error("Authentication required"));
     const decoded = jwt.verify(authToken, process.env.JWT_SECRET);
     socket.authenticatedUserId = String(decoded.id || decoded._id);
@@ -345,7 +463,7 @@ io.on("connection", (socket) => {
   console.log("⚡ Socket connected:", socket.id);
   const userId = socket.authenticatedUserId;
   onlineUsers[userId] = Array.from(
-    new Set([...(onlineUsers[userId] || []), socket.id]),
+    new Set([...(onlineUsers[userId] || []), socket.id])
   );
 
   socket.on("register", (_requestedUserId, acknowledge) => {
@@ -356,7 +474,7 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     const remaining = (onlineUsers[userId] || []).filter(
-      (socketId) => socketId !== socket.id,
+      (socketId) => socketId !== socket.id
     );
     if (remaining.length) onlineUsers[userId] = remaining;
     else delete onlineUsers[userId];
@@ -375,7 +493,11 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`   Dashboard  : https://54.87.203.253.sslip.io`);
   console.log(`   Display    : https://54.87.203.253.sslip.io/display`);
   console.log(`   Register   : ${getRegistrationFormUrl()}`);
-  console.log(`   ESP32 scan : POST https://54.87.203.253.sslip.io/api/qr-scan`);
+  console.log(
+    `   ESP32 scan : POST https://54.87.203.253.sslip.io/api/qr-scan`
+  );
   console.log(`   Rooms API  : https://54.87.203.253.sslip.io/api/rooms`);
-  console.log(`   Ads API    : https://54.87.203.253.sslip.io/api/advertisements`);
+  console.log(
+    `   Ads API    : https://54.87.203.253.sslip.io/api/advertisements`
+  );
 });
