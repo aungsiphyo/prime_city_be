@@ -552,12 +552,20 @@ router.post(
         });
       }
 
+      const { message: customMessage, note } = req.body || {};
+      const adminNote = customMessage || note || "";
+
       const title = sourceLabel === "report"
         ? "Report submitted"
         : sourceLabel === "helper request"
           ? "Helper request submitted"
           : "Notification submitted";
-      const message = `Admin has acknowledged and submitted your ${sourceLabel}.`;
+          
+      let message = `Admin has acknowledged and submitted your ${sourceLabel}.`;
+      if (adminNote) {
+        message += `\n\nNote: ${adminNote}`;
+      }
+
       const residentNotification = await Notification.create({
         user_id: resident._id,
         title,
