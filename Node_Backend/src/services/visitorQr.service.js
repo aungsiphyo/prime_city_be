@@ -2,17 +2,30 @@ const crypto = require("crypto");
 const QRCode = require("qrcode");
 
 const TOKEN_PREFIX = "PCV1";
+const DERIVED_KEY_CONTEXT = "prime-city:visitor-qr:v1";
 
 function signingSecret() {
   const secret = String(
     process.env.VISITOR_QR_SIGNING_SECRET || process.env.JWT_SECRET || ""
   ).trim();
-  if (secret.length < 32) {
-    throw new Error(
-      "VISITOR_QR_SIGNING_SECRET (or JWT_SECRET) must contain at least 32 characters"
-    );
+  if (!secret) {
+    const error = new Error("Visitor QR signing is not configured");
+    error.code = "VISITOR_QR_NOT_CONFIGURED";
+    throw error;
   }
-  return secret;
+
+  // Preserve signatures created with an existing 32+ character secret.
+  // Older deployments sometimes use a shorter JWT_SECRET; derive a fixed-size
+  // purpose-specific HMAC key so visitor QR can remain backward compatible
+  // without using that raw key directly for a second purpose.
+  if (secret.length >= 32) return secret;
+
+  return crypto
+    .createHash("sha256")
+    .update(DERIVED_KEY_CONTEXT)
+    .update("\0")
+    .update(secret)
+    .digest();
 }
 
 function sign(body) {

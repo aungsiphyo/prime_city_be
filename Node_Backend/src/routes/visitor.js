@@ -228,6 +228,10 @@ router.post("/register", optionalAuth, async (req, res) => {
       check_in_time: isPreRegistered ? null : new Date(),
     });
 
+    // Build the signed pass before persisting so a signing/configuration error
+    // cannot leave behind a pre-registration that has no usable QR code.
+    const pass = isPreRegistered ? await buildVisitorPass(visitor, req) : null;
+
     await visitor.save();
 
     if (!isPreRegistered) {
@@ -248,8 +252,6 @@ router.post("/register", optionalAuth, async (req, res) => {
       });
       if (!isPreRegistered) io.emit("visitor_checkin", visitor);
     }
-
-    const pass = isPreRegistered ? await buildVisitorPass(visitor, req) : null;
 
     return res.status(201).json({
       success: true,
@@ -279,7 +281,7 @@ router.post("/register", optionalAuth, async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Internal Server Error: " + err.message,
+      message: "Unable to complete visitor registration. Please try again.",
     });
   }
 });
@@ -338,7 +340,11 @@ router.get("/:id/qr", protect, async (req, res) => {
       },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error("Visitor QR retrieval error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load the visitor pass. Please try again.",
+    });
   }
 });
 
