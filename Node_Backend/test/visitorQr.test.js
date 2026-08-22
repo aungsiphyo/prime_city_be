@@ -68,3 +68,56 @@ test("visitor pass QR image is generated locally without exposing a public URL",
     else process.env.VISITOR_QR_SIGNING_SECRET = previous;
   }
 });
+
+test("visitor passes support an existing short JWT secret through a derived key", () => {
+  const previousVisitorSecret = process.env.VISITOR_QR_SIGNING_SECRET;
+  const previousJwtSecret = process.env.JWT_SECRET;
+  delete process.env.VISITOR_QR_SIGNING_SECRET;
+  process.env.JWT_SECRET = "legacy-jwt-secret";
+
+  try {
+    const now = new Date("2026-08-21T12:00:00.000Z");
+    const token = createVisitorQrToken({
+      visitorId: "507f1f77bcf86cd799439011",
+      qrId: "825135f1-91df-4a75-b225-30117241498b",
+      validFrom: new Date(now.getTime() - 1000),
+      expiresAt: new Date(now.getTime() + 60000),
+    });
+
+    assert.equal(
+      verifyVisitorQrToken(token, now).qid,
+      "825135f1-91df-4a75-b225-30117241498b"
+    );
+  } finally {
+    if (previousVisitorSecret === undefined)
+      delete process.env.VISITOR_QR_SIGNING_SECRET;
+    else process.env.VISITOR_QR_SIGNING_SECRET = previousVisitorSecret;
+    if (previousJwtSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = previousJwtSecret;
+  }
+});
+
+test("existing 32+ character visitor QR secrets retain the original signature", () => {
+  const previous = process.env.VISITOR_QR_SIGNING_SECRET;
+  const secret = "test-only-visitor-qr-secret-that-is-long-enough";
+  process.env.VISITOR_QR_SIGNING_SECRET = secret;
+
+  try {
+    const token = createVisitorQrToken({
+      visitorId: "507f1f77bcf86cd799439011",
+      qrId: "0b48636e-06e4-4f5e-b775-06dca1f6acdf",
+      validFrom: new Date("2026-08-21T00:00:00.000Z"),
+      expiresAt: new Date("2026-08-22T00:00:00.000Z"),
+    });
+    const [, body, signature] = token.split(".");
+    const expected = require("crypto")
+      .createHmac("sha256", secret)
+      .update(body)
+      .digest("base64url");
+
+    assert.equal(signature, expected);
+  } finally {
+    if (previous === undefined) delete process.env.VISITOR_QR_SIGNING_SECRET;
+    else process.env.VISITOR_QR_SIGNING_SECRET = previous;
+  }
+});

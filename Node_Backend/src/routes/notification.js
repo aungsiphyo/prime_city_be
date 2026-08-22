@@ -11,6 +11,9 @@ const protect = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
 const { sendPushToUser, sendPushToUsers } = require("../services/push.service");
 const { recordAdminAudit } = require("../services/audit.service");
+const {
+  parseAdminNotificationTarget,
+} = require("../services/adminNotificationTarget.service");
 
 const RESIDENT_ROLES = ["Resident", "Citizen"];
 
@@ -34,35 +37,67 @@ async function emitNotification(app, userId, notification) {
   }
 }
 
-async function findResidentById(userId) {
-  if (!mongoose.Types.ObjectId.isValid(String(userId || ""))) return null;
+async function findResidentsByIds(userIds) {
+  const requestedIds = Array.from(
+    new Set(userIds.filter(Boolean).map((userId) => String(userId))),
+  );
+  if (!requestedIds.length) return [];
 
-  const resident = await User.findOne({
-    _id: userId,
+  const residents = await User.find({
+    _id: { $in: requestedIds },
     role: { $in: RESIDENT_ROLES },
   })
     .select("_id fullname email phone room_id role")
     .lean();
 
-  if (!resident) return null;
+  const residentIds = residents.map((resident) => resident._id);
+  const roomObjectIds = residents
+    .map((resident) => resident.room_id)
+    .filter((roomId) => mongoose.Types.ObjectId.isValid(String(roomId || "")));
+  const roomNames = residents
+    .map((resident) => String(resident.room_id || "").trim())
+    .filter((roomId) => roomId && !mongoose.Types.ObjectId.isValid(roomId));
+  const roomFilters = [{ resident_id: { $in: residentIds } }];
+  if (roomObjectIds.length) roomFilters.push({ _id: { $in: roomObjectIds } });
+  if (roomNames.length) roomFilters.push({ room_name: { $in: roomNames } });
 
-  const room = await Room.findOne({
-    $or: [
-      { resident_id: resident._id },
-      ...(mongoose.Types.ObjectId.isValid(String(resident.room_id || ""))
-        ? [{ _id: resident.room_id }]
-        : []),
-      ...(resident.room_id ? [{ room_name: String(resident.room_id) }] : []),
-    ],
-  })
-    .select("_id room_name building floor")
+  const rooms = await Room.find({ $or: roomFilters })
+    .select("_id room_name building floor resident_id")
     .lean();
+  const roomByResident = new Map(
+    rooms
+      .filter((room) => room.resident_id)
+      .map((room) => [String(room.resident_id), room]),
+  );
+  const roomByReference = new Map();
+  rooms.forEach((room) => {
+    roomByReference.set(String(room._id), room);
+    roomByReference.set(String(room.room_name), room);
+  });
+  const residentById = new Map(
+    residents.map((resident) => [String(resident._id), resident]),
+  );
 
-  return {
-    ...resident,
-    room_number: room?.room_name || resident.room_id || null,
-    room: room || null,
-  };
+  return requestedIds
+    .map((residentId) => residentById.get(residentId))
+    .filter(Boolean)
+    .map((resident) => {
+      const room =
+        roomByResident.get(String(resident._id)) ||
+        roomByReference.get(String(resident.room_id || "")) ||
+        null;
+      return {
+        ...resident,
+        room_number: room?.room_name || resident.room_id || null,
+        room,
+      };
+    });
+}
+
+async function findResidentById(userId) {
+  if (!mongoose.Types.ObjectId.isValid(String(userId || ""))) return null;
+  const [resident] = await findResidentsByIds([userId]);
+  return resident || null;
 }
 
 async function listResidents() {
@@ -326,6 +361,7 @@ router.post("/send", protect, authorizeRoles("Admin"), async (req, res) => {
     const {
       user_id,
       recipient_user_id,
+      recipient_user_ids,
       target,
       title,
       message,
@@ -340,29 +376,52 @@ router.post("/send", protect, authorizeRoles("Admin"), async (req, res) => {
       });
     }
 
-    const sendToAllResidents =
-      target === "all" ||
-      target === "all_residents" ||
-      user_id === "all" ||
-      recipient_user_id === "all";
+    const resolvedTarget = parseAdminNotificationTarget({
+      target,
+      user_id,
+      recipient_user_id,
+      recipient_user_ids,
+    });
+    const sendToAllResidents = resolvedTarget.mode === "all_residents";
+    if (
+      !sendToAllResidents &&
+      resolvedTarget.recipientIds.some(
+        (residentId) => !mongoose.Types.ObjectId.isValid(residentId),
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "One or more selected residents are invalid",
+      });
+    }
 
     const recipients = sendToAllResidents
       ? await listResidents()
-      : [await findResidentById(recipient_user_id || user_id)].filter(Boolean);
+      : await findResidentsByIds(resolvedTarget.recipientIds);
 
-    if (!recipients.length) {
+    if (
+      !recipients.length ||
+      (!sendToAllResidents &&
+        recipients.length !== resolvedTarget.recipientIds.length)
+    ) {
       return res.status(sendToAllResidents ? 404 : 400).json({
         success: false,
         message: sendToAllResidents
           ? "No resident users found"
-          : "Resident user not found",
+          : "One or more selected residents were not found",
       });
     }
+
+    const responseTarget = sendToAllResidents
+      ? "all_residents"
+      : recipients.length === 1
+      ? "resident"
+      : "selected_residents";
 
     const notificationData = {
       ...data,
       sent_by: String(getUserId(req)),
-      target: sendToAllResidents ? "all_residents" : "resident",
+      target: responseTarget,
     };
 
     const notifications = await Notification.insertMany(
@@ -381,7 +440,7 @@ router.post("/send", protect, authorizeRoles("Admin"), async (req, res) => {
 
     let pushDelivery;
 
-    if (sendToAllResidents) {
+    if (recipients.length > 1) {
       pushDelivery = await sendPushToUsers(
         recipients.map((user) => user._id),
         { title, message, type, data: notificationData },
@@ -408,7 +467,7 @@ router.post("/send", protect, authorizeRoles("Admin"), async (req, res) => {
       entityType: "Notification",
       entityId: notifications[0]?._id,
       metadata: {
-        target: sendToAllResidents ? "all_residents" : "resident",
+        target: responseTarget,
         recipientCount: notifications.length,
         type,
       },
@@ -417,15 +476,15 @@ router.post("/send", protect, authorizeRoles("Admin"), async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Notification sent",
-      target: sendToAllResidents ? "all_residents" : "resident",
+      target: responseTarget,
       sent_count: notifications.length,
       push_delivery: pushDelivery,
-      data: sendToAllResidents ? notifications : notifications[0],
+      data: notifications.length > 1 ? notifications : notifications[0],
       notifications,
       noti: notifications[0],
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.status || 500).json({ success: false, message: err.message });
   }
 });
 
