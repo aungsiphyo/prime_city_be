@@ -5,6 +5,7 @@ const visitorRouter = require("../src/routes/visitor");
 const {
   createVisitorQrId,
   createVisitorQrToken,
+  createSignedCompactVisitorQrToken,
   createLegacyVisitorQrToken,
   verifyVisitorQrToken,
   createVisitorQrImageDataUrl,
@@ -22,26 +23,33 @@ test("pre-registered visitor QR retrieval requires authentication", () => {
   assert.equal(layer.route.stack[0].handle.name, "protect");
 });
 
-test("new visitor passes use a compact signed PCV2 token for ESP32-CAM", () => {
+test("new visitor passes use a version-2-sized opaque token for ESP32-CAM", () => {
+  const qrId = createVisitorQrId();
+  const token = createVisitorQrToken({ qrId });
+  const payload = verifyVisitorQrToken(token);
+
+  assert.equal(qrId.length, 22);
+  assert.equal(payload.v, 2);
+  assert.equal(payload.qid, qrId);
+  assert.match(token, /^P2\.[A-Za-z0-9_-]{22}$/);
+  assert.equal(token.length, 25);
+  assert.ok(
+    QRCode.create(token, { errorCorrectionLevel: "M" }).modules.size <= 25
+  );
+  assert.throws(() => verifyVisitorQrToken("P2.too-short"), /identifier/);
+});
+
+test("signed PCV2 passes from the previous deployment remain accepted", () => {
   const previous = process.env.VISITOR_QR_SIGNING_SECRET;
   process.env.VISITOR_QR_SIGNING_SECRET =
     "test-only-visitor-qr-secret-that-is-long-enough";
   try {
     const qrId = createVisitorQrId();
-    const token = createVisitorQrToken({ qrId });
-    const payload = verifyVisitorQrToken(token);
-
-    assert.equal(qrId.length, 22);
-    assert.equal(payload.v, 2);
-    assert.equal(payload.qid, qrId);
-    assert.match(token, /^PCV2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
-    assert.ok(token.length <= 50, `compact QR token is ${token.length} chars`);
-    assert.ok(
-      QRCode.create(token, { errorCorrectionLevel: "M" }).modules.size <= 33
-    );
+    const token = createSignedCompactVisitorQrToken({ qrId });
+    assert.equal(verifyVisitorQrToken(token).qid, qrId);
     assert.throws(
       () => verifyVisitorQrToken(`${token.slice(0, -1)}x`),
-      /signature|Invalid visitor pass/
+      /signature/
     );
   } finally {
     if (previous === undefined) delete process.env.VISITOR_QR_SIGNING_SECRET;
@@ -75,20 +83,10 @@ test("existing PCV1 passes remain signed, time-bound, and accepted", () => {
 });
 
 test("visitor pass QR image is generated locally without exposing a public URL", async () => {
-  const previous = process.env.VISITOR_QR_SIGNING_SECRET;
-  process.env.VISITOR_QR_SIGNING_SECRET =
-    "test-only-visitor-qr-secret-that-is-long-enough";
-  try {
-    const token = createVisitorQrToken({
-      qrId: createVisitorQrId(),
-    });
-    const image = await createVisitorQrImageDataUrl(token);
-    assert.match(image, /^data:image\/png;base64,/);
-    assert.ok(image.length > 1000);
-  } finally {
-    if (previous === undefined) delete process.env.VISITOR_QR_SIGNING_SECRET;
-    else process.env.VISITOR_QR_SIGNING_SECRET = previous;
-  }
+  const token = createVisitorQrToken({ qrId: createVisitorQrId() });
+  const image = await createVisitorQrImageDataUrl(token);
+  assert.match(image, /^data:image\/png;base64,/);
+  assert.ok(image.length > 1000);
 });
 
 test("visitor passes support an existing short JWT secret through a derived key", () => {
@@ -98,7 +96,7 @@ test("visitor passes support an existing short JWT secret through a derived key"
   process.env.JWT_SECRET = "legacy-jwt-secret";
 
   try {
-    const token = createVisitorQrToken({
+    const token = createSignedCompactVisitorQrToken({
       qrId: "825135f1-91df-4a75-b225-30117241498b",
     });
 

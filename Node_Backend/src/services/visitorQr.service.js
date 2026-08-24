@@ -1,8 +1,9 @@
 const crypto = require("crypto");
 const QRCode = require("qrcode");
 
+const OPAQUE_TOKEN_PREFIX = "P2";
 const LEGACY_TOKEN_PREFIX = "PCV1";
-const COMPACT_TOKEN_PREFIX = "PCV2";
+const SIGNED_COMPACT_TOKEN_PREFIX = "PCV2";
 const COMPACT_SIGNATURE_BYTES = 16;
 const DERIVED_KEY_CONTEXT = "prime-city:visitor-qr:v1";
 
@@ -40,7 +41,7 @@ function signLegacy(body) {
 function signCompact(qrId) {
   return crypto
     .createHmac("sha256", signingSecret())
-    .update(`${COMPACT_TOKEN_PREFIX}.${qrId}`)
+    .update(`${SIGNED_COMPACT_TOKEN_PREFIX}.${qrId}`)
     .digest()
     .subarray(0, COMPACT_SIGNATURE_BYTES)
     .toString("base64url");
@@ -59,17 +60,27 @@ function createVisitorQrId() {
   return crypto.randomBytes(16).toString("base64url");
 }
 
-// PCV2 deliberately keeps only an unguessable QR identifier and a truncated
-// 128-bit HMAC in the QR. Schedule and visitor details remain in MongoDB. This
-// makes the code roughly the same density as the existing form URL, which is
-// substantially easier for an ESP32-CAM to focus and decode.
-function createVisitorQrToken({ qrId }) {
+function normalizedQrId(qrId) {
   const normalizedQrId = String(qrId || "").trim();
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(normalizedQrId)) {
     throw new Error("Visitor QR identifier is invalid");
   }
-  return `${COMPACT_TOKEN_PREFIX}.${normalizedQrId}.${signCompact(
-    normalizedQrId
+  return normalizedQrId;
+}
+
+// P2 is an opaque 128-bit bearer identifier. Visitor data, activation time,
+// expiry, and one-time status stay in MongoDB. A random ID that does not match
+// an active database record is rejected, so a second signature inside the QR
+// is unnecessary. New passes are only 25 characters and fit QR version 2.
+function createVisitorQrToken({ qrId }) {
+  return `${OPAQUE_TOKEN_PREFIX}.${normalizedQrId(qrId)}`;
+}
+
+// Accept signed PCV2 passes produced by the immediately preceding deployment.
+function createSignedCompactVisitorQrToken({ qrId }) {
+  const normalized = normalizedQrId(qrId);
+  return `${SIGNED_COMPACT_TOKEN_PREFIX}.${normalized}.${signCompact(
+    normalized
   )}`;
 }
 
@@ -132,9 +143,17 @@ function verifyLegacyVisitorQrToken(token, now) {
 
 function verifyVisitorQrToken(token, now = new Date()) {
   const normalizedToken = String(token || "").trim();
-  const [prefix, qrId, signature, extra] = normalizedToken.split(".");
+  const parts = normalizedToken.split(".");
+  const [prefix, qrId, signature, extra] = parts;
 
-  if (prefix === COMPACT_TOKEN_PREFIX) {
+  if (prefix === OPAQUE_TOKEN_PREFIX) {
+    if (parts.length !== 2) {
+      throw new Error("Invalid visitor pass");
+    }
+    return { v: 2, qid: normalizedQrId(qrId) };
+  }
+
+  if (prefix === SIGNED_COMPACT_TOKEN_PREFIX) {
     if (
       !/^[A-Za-z0-9_-]{16,64}$/.test(qrId || "") ||
       !/^[A-Za-z0-9_-]{22}$/.test(signature || "") ||
@@ -155,7 +174,7 @@ async function createVisitorQrImageDataUrl(token) {
     width: 640,
     margin: 4,
     errorCorrectionLevel: "M",
-    color: { dark: "#081426", light: "#FFFFFF" },
+    color: { dark: "#000000", light: "#FFFFFF" },
   });
   return `data:image/png;base64,${png.toString("base64")}`;
 }
@@ -163,6 +182,7 @@ async function createVisitorQrImageDataUrl(token) {
 module.exports = {
   createVisitorQrId,
   createVisitorQrToken,
+  createSignedCompactVisitorQrToken,
   createLegacyVisitorQrToken,
   verifyVisitorQrToken,
   createVisitorQrImageDataUrl,
