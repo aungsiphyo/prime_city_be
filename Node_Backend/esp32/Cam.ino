@@ -69,13 +69,13 @@ void connectWiFi() {
 }
 
 // ================= SEND TO SERVER =================
-void sendQrToServer(const String &payload) {
+int sendQrToServer(const String &payload) {
 
   connectWiFi();
 
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("No WiFi");
-    return;
+    return -1;
   }
 
   WiFiClientSecure client;
@@ -94,7 +94,7 @@ void sendQrToServer(const String &payload) {
 
     Serial.println("HTTP Begin Failed");
 
-    return;
+    return -2;
   }
 
   http.addHeader("Content-Type", "application/json");
@@ -114,13 +114,11 @@ void sendQrToServer(const String &payload) {
   Serial.print("Response : ");
   Serial.println(response);
 
-  http.end();
-
   switch (code) {
 
   case 200:
 
-    Serial.println("Visitor Accepted");
+    Serial.println("Visitor Accepted - Display Updated");
     break;
 
   case 400:
@@ -130,14 +128,32 @@ void sendQrToServer(const String &payload) {
 
   case 401:
 
-    Serial.println("Invalid QR");
+    Serial.println("Invalid or Inactive QR");
+    break;
+
+  case 409:
+
+    Serial.println("QR Already Used");
+    break;
+
+  case 410:
+
+    Serial.println("QR Expired");
     break;
 
   default:
 
-    Serial.println("Server Error");
+    if (code <= 0) {
+      Serial.print("HTTP Error : ");
+      Serial.println(http.errorToString(code));
+    } else {
+      Serial.println("Server Error");
+    }
     break;
   }
+
+  http.end();
+  return code;
 }
 
 // ================= QR TASK =================
@@ -177,10 +193,12 @@ void qrTask(void *pvParameters) {
         continue;
       }
 
-      lastPayload = payload;
-      lastScanAt = now;
+      int code = sendQrToServer(payload);
 
-      sendQrToServer(payload);
+      if (code > 0) {
+        lastPayload = payload;
+        lastScanAt = now;
+      }
     }
 
     if (WiFi.status() != WL_CONNECTED)
@@ -210,7 +228,7 @@ void setup() {
 
   xTaskCreate(qrTask, "QRTask", 6144, NULL, 4, NULL);
 
-  Serial.println("QR Scanner Ready");
+  Serial.println("QR Scanner Ready - Walk-in and Pre-registration Enabled");
 }
 
 // ================= LOOP =================

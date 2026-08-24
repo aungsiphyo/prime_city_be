@@ -178,8 +178,20 @@ function broadcastSSE(event, data) {
   }
 }
 
+function visitorPassIdentity(payload) {
+  if (payload.v === 2) {
+    return { pre_registration_qr_id: payload.qid };
+  }
+
+  return {
+    _id: payload.vid,
+    pre_registration_qr_id: payload.qid,
+  };
+}
+
 app.post("/api/qr-scan", async (req, res) => {
-  const { token } = req.body;
+  const token =
+    typeof req.body?.token === "string" ? req.body.token.trim() : "";
 
   if (!token) {
     return res.status(400).json({
@@ -216,10 +228,10 @@ app.post("/api/qr-scan", async (req, res) => {
   try {
     const payload = verifyVisitorQrToken(token);
     const now = new Date();
+    const passIdentity = visitorPassIdentity(payload);
     const visitor = await Visitor.findOneAndUpdate(
       {
-        _id: payload.vid,
-        pre_registration_qr_id: payload.qid,
+        ...passIdentity,
         registration_type: "PreRegistered",
         qr_status: "Active",
         qr_valid_from: { $lte: now },
@@ -239,16 +251,17 @@ app.post("/api/qr-scan", async (req, res) => {
       .lean();
 
     if (!visitor) {
-      const existing = await Visitor.findById(payload.vid)
-        .select("qr_status qr_expires_at")
+      const existing = await Visitor.findOne(passIdentity)
+        .select("qr_status qr_valid_from qr_expires_at")
         .lean();
-      const message =
-        existing?.qr_status === "Used"
-          ? "Visitor pass has already been used"
-          : existing?.qr_expires_at && existing.qr_expires_at < now
-          ? "Visitor pass has expired"
-          : "Visitor pass is invalid or inactive";
-      return res.status(existing?.qr_status === "Used" ? 409 : 401).json({
+      const alreadyUsed = existing?.qr_status === "Used";
+      const expired = existing?.qr_expires_at && existing.qr_expires_at < now;
+      const message = alreadyUsed
+        ? "Visitor pass has already been used"
+        : expired
+        ? "Visitor pass has expired"
+        : "Visitor pass is invalid or inactive";
+      return res.status(alreadyUsed ? 409 : expired ? 410 : 401).json({
         success: false,
         message,
       });
@@ -289,8 +302,7 @@ app.post("/api/visitor-pass/preview", async (req, res) => {
     const token = String(req.body.token || "").trim();
     const payload = verifyVisitorQrToken(token);
     const visitor = await Visitor.findOne({
-      _id: payload.vid,
-      pre_registration_qr_id: payload.qid,
+      ...visitorPassIdentity(payload),
       registration_type: "PreRegistered",
       qr_status: "Active",
       qr_valid_from: { $lte: new Date() },

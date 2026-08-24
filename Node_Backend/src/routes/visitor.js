@@ -5,8 +5,8 @@ const User = require("../models/User");
 const Room = require("../models/Room");
 const protect = require("../middleware/authMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
-const crypto = require("crypto");
 const {
+  createVisitorQrId,
   createVisitorQrToken,
   createVisitorQrImageDataUrl,
 } = require("../services/visitorQr.service");
@@ -75,10 +75,7 @@ function publicBaseUrl(req) {
 
 async function buildVisitorPass(visitor, req) {
   const token = createVisitorQrToken({
-    visitorId: visitor._id,
     qrId: visitor.pre_registration_qr_id,
-    validFrom: visitor.qr_valid_from,
-    expiresAt: visitor.qr_expires_at,
   });
   return {
     enabled: true,
@@ -220,7 +217,9 @@ router.post("/register", optionalAuth, async (req, res) => {
       registered_by: authenticatedUser?._id || null,
       target_room_id: linkedRoom?._id || null,
       registration_type: isPreRegistered ? "PreRegistered" : "WalkIn",
-      pre_registration_qr_id: isPreRegistered ? crypto.randomUUID() : undefined,
+      pre_registration_qr_id: isPreRegistered
+        ? createVisitorQrId()
+        : undefined,
       qr_valid_from: schedule?.validFrom || null,
       qr_expires_at: schedule?.expiresAt || null,
       qr_status: isPreRegistered ? "Active" : null,
@@ -264,6 +263,10 @@ router.post("/register", optionalAuth, async (req, res) => {
         id: visitor._id,
         registration_type: visitor.registration_type,
         visitDate: visitor.visitDate,
+        purpose: visitor.purpose,
+        purposeDetail: visitor.purposeDetail,
+        host: visitor.hostName,
+        room: linkedRoom?.room_name || null,
         qr_status: visitor.qr_status,
         visitor_pass: pass,
       },
