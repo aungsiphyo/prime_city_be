@@ -1,7 +1,9 @@
 const crypto = require("crypto");
 const QRCode = require("qrcode");
 
-const TOKEN_PREFIX = "PCV1";
+const LEGACY_TOKEN_PREFIX = "PCV1";
+const COMPACT_TOKEN_PREFIX = "PCV2";
+const COMPACT_SIGNATURE_BYTES = 16;
 const DERIVED_KEY_CONTEXT = "prime-city:visitor-qr:v1";
 
 function signingSecret() {
@@ -28,14 +30,52 @@ function signingSecret() {
     .digest();
 }
 
-function sign(body) {
+function signLegacy(body) {
   return crypto
     .createHmac("sha256", signingSecret())
     .update(body)
     .digest("base64url");
 }
 
-function createVisitorQrToken({ visitorId, qrId, validFrom, expiresAt }) {
+function signCompact(qrId) {
+  return crypto
+    .createHmac("sha256", signingSecret())
+    .update(`${COMPACT_TOKEN_PREFIX}.${qrId}`)
+    .digest()
+    .subarray(0, COMPACT_SIGNATURE_BYTES)
+    .toString("base64url");
+}
+
+function signaturesMatch(expected, received) {
+  const expectedBuffer = Buffer.from(expected);
+  const receivedBuffer = Buffer.from(received);
+  return (
+    expectedBuffer.length === receivedBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, receivedBuffer)
+  );
+}
+
+function createVisitorQrId() {
+  return crypto.randomBytes(16).toString("base64url");
+}
+
+// PCV2 deliberately keeps only an unguessable QR identifier and a truncated
+// 128-bit HMAC in the QR. Schedule and visitor details remain in MongoDB. This
+// makes the code roughly the same density as the existing form URL, which is
+// substantially easier for an ESP32-CAM to focus and decode.
+function createVisitorQrToken({ qrId }) {
+  const normalizedQrId = String(qrId || "").trim();
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(normalizedQrId)) {
+    throw new Error("Visitor QR identifier is invalid");
+  }
+  return `${COMPACT_TOKEN_PREFIX}.${normalizedQrId}.${signCompact(
+    normalizedQrId
+  )}`;
+}
+
+// Kept only so PCV1 passes created before the compact-token deployment remain
+// verifiable until their original expiry time.
+function createLegacyVisitorQrToken({ visitorId, qrId, validFrom, expiresAt }) {
   const payload = {
     v: 1,
     vid: String(visitorId),
@@ -47,21 +87,16 @@ function createVisitorQrToken({ visitorId, qrId, validFrom, expiresAt }) {
     throw new Error("Visitor QR schedule is invalid");
   }
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  return `${TOKEN_PREFIX}.${body}.${sign(body)}`;
+  return `${LEGACY_TOKEN_PREFIX}.${body}.${signLegacy(body)}`;
 }
 
-function verifyVisitorQrToken(token, now = new Date()) {
+function verifyLegacyVisitorQrToken(token, now) {
   const [prefix, body, signature, extra] = String(token || "").split(".");
-  if (prefix !== TOKEN_PREFIX || !body || !signature || extra) {
+  if (prefix !== LEGACY_TOKEN_PREFIX || !body || !signature || extra) {
     throw new Error("Invalid visitor pass");
   }
 
-  const expected = Buffer.from(sign(body));
-  const received = Buffer.from(signature);
-  if (
-    expected.length !== received.length ||
-    !crypto.timingSafeEqual(expected, received)
-  ) {
+  if (!signaturesMatch(signLegacy(body), signature)) {
     throw new Error("Invalid visitor pass signature");
   }
 
@@ -95,11 +130,30 @@ function verifyVisitorQrToken(token, now = new Date()) {
   return payload;
 }
 
+function verifyVisitorQrToken(token, now = new Date()) {
+  const normalizedToken = String(token || "").trim();
+  const [prefix, qrId, signature, extra] = normalizedToken.split(".");
+
+  if (prefix === COMPACT_TOKEN_PREFIX) {
+    if (
+      !/^[A-Za-z0-9_-]{16,64}$/.test(qrId || "") ||
+      !/^[A-Za-z0-9_-]{22}$/.test(signature || "") ||
+      extra ||
+      !signaturesMatch(signCompact(qrId), signature)
+    ) {
+      throw new Error("Invalid visitor pass signature");
+    }
+    return { v: 2, qid: qrId };
+  }
+
+  return verifyLegacyVisitorQrToken(normalizedToken, now);
+}
+
 async function createVisitorQrImageDataUrl(token) {
   const png = await QRCode.toBuffer(token, {
     type: "png",
     width: 640,
-    margin: 2,
+    margin: 4,
     errorCorrectionLevel: "M",
     color: { dark: "#081426", light: "#FFFFFF" },
   });
@@ -107,7 +161,9 @@ async function createVisitorQrImageDataUrl(token) {
 }
 
 module.exports = {
+  createVisitorQrId,
   createVisitorQrToken,
+  createLegacyVisitorQrToken,
   verifyVisitorQrToken,
   createVisitorQrImageDataUrl,
 };

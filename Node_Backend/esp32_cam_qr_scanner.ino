@@ -1,19 +1,18 @@
-#include <WiFi.h>
-#include <HTTPClient.h>
 #include <ESP32QRCodeReader.h>
+#include <HTTPClient.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
 
 // ================= WIFI =================
-const char* WIFI_SSID = "Redmi Note 13 Pro";
-const char* WIFI_PASSWORD = "11111111";
+const char* WIFI_SSID = "KoMyo";
+const char* WIFI_PASSWORD = "0995138020";
 
 // ================= BACKEND =================
-// Laptop / Backend IP ကို server log ထဲက Register IP နဲ့ ပြောင်းပါ
-// Example: Register : http://10.139.242.187:5001/register
-const char* SCAN_ENDPOINT = "http://10.139.242.187:5001/api/qr-scan";
-
-// Visitor က ပြမယ့် Default QR ထဲက token
-// server.js ထဲက VALID_QR_TOKEN နဲ့ တူရမယ်
-const char* VISITOR_BADGE_TOKEN = "VISITOR_ACCESS_2024_SECRET";
+// This endpoint accepts both:
+// 1. the existing static walk-in badge (shows the registration-form QR), and
+// 2. the signed one-time pre-registration QR (shows visitor details directly).
+const char* SCAN_ENDPOINT =
+    "https://54.87.203.253.sslip.io/api/qr-scan";
 
 // ================= QR READER =================
 ESP32QRCodeReader reader(CAMERA_MODEL_AI_THINKER);
@@ -73,23 +72,29 @@ void connectWiFi() {
 }
 
 // ================= SEND QR TO SERVER =================
-void sendQrToServer(const String& qrPayload) {
+int sendQrToServer(const String& qrPayload) {
   connectWiFi();
 
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("❌ Cannot send QR. WiFi not connected.");
-    return;
+    return -1;
   }
 
+  WiFiClientSecure client;
+
+  // Hackathon/demo setup. For production, install the server CA certificate
+  // with client.setCACert(...) instead of disabling certificate validation.
+  client.setInsecure();
+
   HTTPClient http;
-  http.setTimeout(8000);
+  http.setTimeout(10000);
 
   Serial.print("POST URL: ");
   Serial.println(SCAN_ENDPOINT);
 
-  if (!http.begin(SCAN_ENDPOINT)) {
+  if (!http.begin(client, SCAN_ENDPOINT)) {
     Serial.println("❌ HTTP begin failed");
-    return;
+    return -2;
   }
 
   http.addHeader("Content-Type", "application/json");
@@ -108,18 +113,34 @@ void sendQrToServer(const String& qrPayload) {
   Serial.print("Response: ");
   Serial.println(response);
 
-  http.end();
-
-  if (statusCode == 200) {
-    Serial.println("✅ Visitor QR accepted.");
-    Serial.println("✅ Laptop/Tablet display should show Registration QR.");
-  } else if (statusCode == 401) {
-    Serial.println("❌ Invalid Visitor QR Token");
-  } else if (statusCode == 400) {
-    Serial.println("❌ No token or bad request");
-  } else {
-    Serial.println("⚠️ Server error or network issue");
+  switch (statusCode) {
+    case 200:
+      Serial.println("✅ QR accepted; reception display updated.");
+      break;
+    case 400:
+      Serial.println("❌ Bad QR request.");
+      break;
+    case 401:
+      Serial.println("❌ Invalid or inactive visitor QR.");
+      break;
+    case 409:
+      Serial.println("❌ This one-time visitor QR was already used.");
+      break;
+    case 410:
+      Serial.println("❌ This visitor QR has expired.");
+      break;
+    default:
+      if (statusCode <= 0) {
+        Serial.print("⚠️ HTTP connection error: ");
+        Serial.println(http.errorToString(statusCode));
+      } else {
+        Serial.println("⚠️ Server error or unexpected response.");
+      }
+      break;
   }
+
+  http.end();
+  return statusCode;
 }
 
 // ================= QR TASK =================
@@ -152,11 +173,16 @@ void onQrCodeTask(void* pvParameters) {
         continue;
       }
 
-      lastPayload = payload;
-      lastScanAt = now;
+      // The backend decides whether this is the preserved walk-in badge flow
+      // or a signed pre-registered visitor pass.
+      const int statusCode = sendQrToServer(payload);
 
-      // Visitor default QR ကို backend ဆီပို့
-      sendQrToServer(payload);
+      // Do not suppress an immediate retry when WiFi/HTTP never reached the
+      // backend. Server responses still use the normal duplicate cooldown.
+      if (statusCode > 0) {
+        lastPayload = payload;
+        lastScanAt = now;
+      }
     }
 
     if (WiFi.status() != WL_CONNECTED) {
@@ -193,7 +219,7 @@ void setup() {
   );
 
   Serial.println("✅ ESP32-CAM Ready");
-  Serial.println("Visitor should show Default QR Badge.");
+  Serial.println("Scan a walk-in badge or pre-registered visitor QR.");
 }
 
 // ================= LOOP =================
