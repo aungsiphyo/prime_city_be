@@ -10,12 +10,14 @@ const char* WIFI_PASSWORD = "0995138020";
 // ================= BACKEND =================
 // This endpoint accepts both:
 // 1. the existing static walk-in badge (shows the registration-form QR), and
-// 2. the signed one-time pre-registration QR (shows visitor details directly).
+// 2. the opaque one-time pre-registration QR (shows visitor details directly).
 const char* SCAN_ENDPOINT =
     "https://54.87.203.253.sslip.io/api/qr-scan";
 
 // ================= QR READER =================
-ESP32QRCodeReader reader(CAMERA_MODEL_AI_THINKER);
+// VGA gives the decoder four times as many pixels as the library's default
+// QVGA mode, which helps prevent Format data/ECC failures at close range.
+ESP32QRCodeReader reader(CAMERA_MODEL_AI_THINKER, FRAMESIZE_VGA);
 
 // ================= DUPLICATE CONTROL =================
 String lastPayload = "";
@@ -174,7 +176,7 @@ void onQrCodeTask(void* pvParameters) {
       }
 
       // The backend decides whether this is the preserved walk-in badge flow
-      // or a signed pre-registered visitor pass.
+      // or an opaque pre-registered visitor pass.
       const int statusCode = sendQrToServer(payload);
 
       // Do not suppress an immediate retry when WiFi/HTTP never reached the
@@ -206,7 +208,24 @@ void setup() {
   connectWiFi();
 
   Serial.println("Starting QR Reader...");
-  reader.setup();
+  QRCodeReaderSetupErr setupResult = reader.setup();
+  if (setupResult != SETUP_OK) {
+    Serial.print("❌ QR Reader setup failed. Code: ");
+    Serial.println((int)setupResult);
+    while (true) {
+      delay(1000);
+    }
+  }
+
+  sensor_t* sensor = esp_camera_sensor_get();
+  if (sensor != nullptr) {
+    sensor->set_brightness(sensor, 0);
+    sensor->set_contrast(sensor, 2);
+    sensor->set_saturation(sensor, -2);
+    sensor->set_gain_ctrl(sensor, 1);
+    sensor->set_exposure_ctrl(sensor, 1);
+  }
+
   reader.beginOnCore(1);
 
   xTaskCreate(
