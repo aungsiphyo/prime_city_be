@@ -452,6 +452,7 @@ const io = new Server(server, {
 });
 
 const onlineUsers = {};
+const SOS_RESPONDER_ROLES = new Set(["Admin", "Staff", "Security"]);
 
 io.use((socket, next) => {
   try {
@@ -474,6 +475,9 @@ io.use((socket, next) => {
 io.on("connection", (socket) => {
   console.log("⚡ Socket connected:", socket.id);
   const userId = socket.authenticatedUserId;
+  if (SOS_RESPONDER_ROLES.has(socket.authenticatedRole)) {
+    socket.join("sos_responders");
+  }
   onlineUsers[userId] = Array.from(
     new Set([...(onlineUsers[userId] || []), socket.id])
   );

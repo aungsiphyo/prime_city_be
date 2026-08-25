@@ -5,9 +5,23 @@ const SosAlert = require("../models/SosAlert");
 const User = require("../models/User");
 const Room = require("../models/Room");
 const Notification = require("../models/Notification");
-const optionalAuth = require("../middleware/optionalAuthMiddleware");
-const { canSendSosWithoutRoom } = require("../utils/sosPolicy");
+const protect = require("../middleware/authMiddleware");
+const authorizeRoles = require("../middleware/roleMiddleware");
+const { recordAdminAudit } = require("../services/audit.service");
+const {
+  RESIDENT_ROLES,
+  broadcastApprovedSos,
+  emitNotificationToUser,
+} = require("../services/sosBroadcast.service");
+const {
+  REVIEWABLE_SOS_STATUSES,
+  RESOLVABLE_SOS_STATUSES,
+  canSendSosWithoutRoom,
+  getSosStatusFilter,
+} = require("../utils/sosPolicy");
 const { sendPushToUser, sendPushToUsers } = require("../services/push.service");
+
+const SOS_RESPONDER_ROLES = ["Admin", "Staff", "Security"];
 
 function getUserId(req) {
   return req.user?.id || req.user?._id;
@@ -50,16 +64,6 @@ async function resolveRoomReference(roomRef, residentId) {
   };
 }
 
-function emitNotificationToUser(app, userId, notification) {
-  const io = app.get("io");
-  const users = app.get("onlineUsers") || {};
-  const socketIds = users[String(userId)];
-
-  if (io && socketIds) {
-    io.to(Array.isArray(socketIds) ? socketIds : [socketIds]).emit("notification", notification);
-  }
-}
-
 async function notifyUsers(app, userIds, payload, options = {}) {
   const ids = [...new Set(userIds.filter(Boolean).map(String))];
   if (!ids.length) return;
@@ -81,6 +85,23 @@ async function notifyUsers(app, userIds, payload, options = {}) {
   await sendPushToUsers(ids, payload, options);
 }
 
+function emitSosUpdate(app, alert) {
+  const io = app.get("io");
+  if (!io) return;
+
+  io.to("sos_responders").emit("sos_alert_updated", alert);
+  io.to("sos_responders").emit("admin_sos_alert_updated", alert);
+}
+
+async function getPopulatedSos(id) {
+  return SosAlert.findById(id)
+    .populate("resident_id", "fullname email phone role")
+    .populate("room_id")
+    .populate("approved_by", "fullname email role")
+    .populate("rejected_by", "fullname email role")
+    .populate("resolved_by", "fullname email role");
+}
+
 // =========================
 // GET /api/sos
 // List SOS alerts
@@ -89,15 +110,18 @@ async function notifyUsers(app, userIds, payload, options = {}) {
 // ?q=fire
 // ?page=1&limit=50
 // =========================
-router.get("/", async (req, res) => {
+router.get(
+  "/",
+  protect,
+  authorizeRoles(...SOS_RESPONDER_ROLES),
+  async (req, res) => {
   try {
     const { status, q, page = 1, limit = 50 } = req.query;
 
     const filter = {};
 
-    if (status) {
-      filter.status = status;
-    }
+    const statusFilter = getSosStatusFilter(status);
+    if (statusFilter) filter.status = statusFilter;
 
     if (q) {
       const regex = new RegExp(q.trim(), "i");
@@ -140,18 +164,20 @@ router.get("/", async (req, res) => {
       message: err.message,
     });
   }
-});
+  },
+);
 
 // =========================
 // GET /api/sos/:id
 // Get single SOS alert details
 // =========================
-router.get("/:id", async (req, res) => {
+router.get(
+  "/:id",
+  protect,
+  authorizeRoles(...SOS_RESPONDER_ROLES),
+  async (req, res) => {
   try {
-    const alert = await SosAlert.findById(req.params.id)
-      .populate("resident_id", "fullname email phone role")
-      .populate("room_id")
-      .lean();
+    const alert = await getPopulatedSos(req.params.id);
 
     if (!alert) {
       return res.status(404).json({
@@ -171,7 +197,8 @@ router.get("/:id", async (req, res) => {
       message: err.message,
     });
   }
-});
+  },
+);
 
 // =========================
 // POST /api/sos
@@ -185,7 +212,7 @@ router.get("/:id", async (req, res) => {
 //   "priority": "High"
 // }
 // =========================
-router.post("/", optionalAuth, async (req, res) => {
+router.post("/", protect, async (req, res) => {
   try {
     let { resident_id, room_id, message, alert_type = "General" } = req.body;
     const { priority = "High" } = req.body;
@@ -255,12 +282,12 @@ router.post("/", optionalAuth, async (req, res) => {
     const io = req.app.get("io");
 
     if (io) {
-      io.emit("sos_alert_created", populatedSos);
-      io.emit("admin_sos_alert", populatedSos);
+      io.to("sos_responders").emit("sos_alert_created", populatedSos);
+      io.to("sos_responders").emit("admin_sos_alert", populatedSos);
     }
 
     const responderUsers = await User.find({
-      role: { $in: ["Admin", "Staff", "Security"] },
+      role: { $in: SOS_RESPONDER_ROLES },
     })
       .select("_id")
       .lean();
@@ -333,22 +360,17 @@ router.post("/", optionalAuth, async (req, res) => {
 //   "level": "Critical"
 // }
 // =========================
-router.post("/emergency", async (req, res) => {
+router.post(
+  "/emergency",
+  protect,
+  authorizeRoles("Admin"),
+  async (req, res) => {
   try {
     const {
       title = "Emergency SOS Alert",
       message = "Emergency alert from admin",
       level = "Critical",
     } = req.body;
-
-    const io = req.app.get("io");
-
-    if (!io) {
-      return res.status(500).json({
-        success: false,
-        message: "Socket.IO not initialized",
-      });
-    }
 
     const emergencyData = {
       title,
@@ -357,9 +379,9 @@ router.post("/emergency", async (req, res) => {
       created_at: new Date(),
     };
 
-    io.emit("emergency_sos", emergencyData);
-
-    const users = await User.find().select("_id").lean();
+    const users = await User.find({ role: { $in: RESIDENT_ROLES } })
+      .select("_id")
+      .lean();
     await notifyUsers(
       req.app,
       users.map((user) => user._id),
@@ -387,7 +409,327 @@ router.post("/emergency", async (req, res) => {
       message: err.message,
     });
   }
-});
+  },
+);
+
+// =========================
+// POST /api/sos/:id/approve
+// Verify a pending SOS and broadcast it to resident mobile apps.
+// =========================
+router.post(
+  "/:id/approve",
+  protect,
+  authorizeRoles("Admin"),
+  async (req, res) => {
+    try {
+      if (!isObjectId(req.params.id)) {
+        return res.status(400).json({
+          success: false,
+          message: "SOS alert id is invalid",
+        });
+      }
+
+      const approvedBy = getUserId(req);
+      const approvedAt = new Date();
+      const approved = await SosAlert.findOneAndUpdate(
+        {
+          _id: req.params.id,
+          status: { $in: REVIEWABLE_SOS_STATUSES },
+        },
+        {
+          $set: {
+            status: "Approved",
+            approved_at: approvedAt,
+            approved_by: approvedBy,
+            broadcast_status: "Processing",
+          },
+          $unset: {
+            rejected_at: 1,
+            rejected_by: 1,
+            rejection_reason: 1,
+            broadcast_error: 1,
+          },
+        },
+        { new: true, runValidators: true },
+      )
+        .populate("resident_id", "fullname email phone role")
+        .populate("room_id");
+
+      if (!approved) {
+        const existing = await getPopulatedSos(req.params.id);
+        if (!existing) {
+          return res.status(404).json({
+            success: false,
+            message: "SOS alert not found",
+          });
+        }
+
+        if (existing.status === "Approved") {
+          return res.status(200).json({
+            success: true,
+            already_approved: true,
+            message: "SOS alert was already approved",
+            data: existing,
+            push_delivery: existing.push_delivery,
+          });
+        }
+
+        return res.status(409).json({
+          success: false,
+          message: `Only a pending SOS alert can be approved; current status is ${existing.status}`,
+          data: existing,
+        });
+      }
+
+      let delivery = null;
+      let deliveryError = null;
+
+      try {
+        delivery = await broadcastApprovedSos(
+          req.app,
+          approved,
+          approvedBy,
+          approvedAt,
+        );
+        approved.broadcast_status = delivery.broadcastStatus;
+        approved.broadcasted_at = new Date();
+        approved.broadcast_recipient_count = delivery.recipientCount;
+        approved.push_delivery = delivery.pushDelivery;
+        approved.broadcast_error =
+          delivery.broadcastStatus === "Sent"
+            ? undefined
+            : delivery.pushDelivery?.reason ||
+              delivery.pushDelivery?.error ||
+              "Push delivery was incomplete";
+      } catch (err) {
+        deliveryError = err;
+        approved.broadcast_status = "Failed";
+        approved.broadcast_error = err.message;
+      }
+
+      await approved.save();
+      const populated = await getPopulatedSos(approved._id);
+      emitSosUpdate(req.app, populated);
+
+      await recordAdminAudit({
+        adminUserId: approvedBy,
+        action: "sos_approved",
+        entityType: "SosAlert",
+        entityId: approved._id,
+        metadata: {
+          alertType: approved.alert_type,
+          priority: approved.priority,
+          source: approved.source,
+          recipientCount: delivery?.recipientCount || 0,
+          broadcastStatus: approved.broadcast_status,
+        },
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: deliveryError
+          ? "SOS approved, but emergency delivery failed"
+          : approved.broadcast_status === "Sent"
+            ? "SOS approved and emergency alert sent"
+            : "SOS approved and saved; push delivery was incomplete",
+        data: populated,
+        notification_delivery: {
+          success: !deliveryError,
+          count: delivery?.notificationCount || 0,
+          recipient_count: delivery?.recipientCount || 0,
+          error: deliveryError?.message,
+        },
+        push_delivery: delivery?.pushDelivery || null,
+      });
+    } catch (err) {
+      console.error("POST /api/sos/:id/approve error:", err);
+      return res.status(500).json({
+        success: false,
+        message: err.message,
+      });
+    }
+  },
+);
+
+// =========================
+// POST /api/sos/:id/reject
+// Reject a pending SOS without broadcasting it to residents.
+// =========================
+router.post(
+  "/:id/reject",
+  protect,
+  authorizeRoles("Admin"),
+  async (req, res) => {
+    try {
+      if (!isObjectId(req.params.id)) {
+        return res.status(400).json({
+          success: false,
+          message: "SOS alert id is invalid",
+        });
+      }
+
+      const rejectedBy = getUserId(req);
+      const rejectedAt = new Date();
+      const rejected = await SosAlert.findOneAndUpdate(
+        {
+          _id: req.params.id,
+          status: { $in: REVIEWABLE_SOS_STATUSES },
+        },
+        {
+          $set: {
+            status: "Rejected",
+            rejected_at: rejectedAt,
+            rejected_by: rejectedBy,
+            rejection_reason: String(req.body.reason || "").trim(),
+            broadcast_status: "Not Sent",
+          },
+        },
+        { new: true, runValidators: true },
+      );
+
+      if (!rejected) {
+        const existing = await getPopulatedSos(req.params.id);
+        if (!existing) {
+          return res.status(404).json({
+            success: false,
+            message: "SOS alert not found",
+          });
+        }
+
+        return res.status(409).json({
+          success: false,
+          message: `Only a pending SOS alert can be rejected; current status is ${existing.status}`,
+          data: existing,
+        });
+      }
+
+      const populated = await getPopulatedSos(rejected._id);
+      emitSosUpdate(req.app, populated);
+      await recordAdminAudit({
+        adminUserId: rejectedBy,
+        action: "sos_rejected",
+        entityType: "SosAlert",
+        entityId: rejected._id,
+        metadata: {
+          reason: rejected.rejection_reason,
+          source: rejected.source,
+        },
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: "SOS alert rejected",
+        data: populated,
+      });
+    } catch (err) {
+      console.error("POST /api/sos/:id/reject error:", err);
+      return res.status(500).json({
+        success: false,
+        message: err.message,
+      });
+    }
+  },
+);
+
+// =========================
+// POST /api/sos/:id/broadcast
+// Retry delivery for an approved SOS without creating duplicate inbox records.
+// =========================
+router.post(
+  "/:id/broadcast",
+  protect,
+  authorizeRoles("Admin"),
+  async (req, res) => {
+    try {
+      if (!isObjectId(req.params.id)) {
+        return res.status(400).json({
+          success: false,
+          message: "SOS alert id is invalid",
+        });
+      }
+
+      const alert = await getPopulatedSos(req.params.id);
+      if (!alert) {
+        return res.status(404).json({
+          success: false,
+          message: "SOS alert not found",
+        });
+      }
+      if (alert.status !== "Approved") {
+        return res.status(409).json({
+          success: false,
+          message: "Only an approved SOS alert can be broadcast",
+          data: alert,
+        });
+      }
+
+      alert.broadcast_status = "Processing";
+      alert.broadcast_error = undefined;
+      await alert.save();
+
+      const approvedBy = alert.approved_by?._id || alert.approved_by;
+      const approvedAt = alert.approved_at || new Date();
+      const delivery = await broadcastApprovedSos(
+        req.app,
+        alert,
+        approvedBy,
+        approvedAt,
+      );
+
+      alert.broadcast_status = delivery.broadcastStatus;
+      alert.broadcasted_at = new Date();
+      alert.broadcast_recipient_count = delivery.recipientCount;
+      alert.push_delivery = delivery.pushDelivery;
+      alert.broadcast_error =
+        delivery.broadcastStatus === "Sent"
+          ? undefined
+          : delivery.pushDelivery?.reason ||
+            delivery.pushDelivery?.error ||
+            "Push delivery was incomplete";
+      await alert.save();
+
+      const populated = await getPopulatedSos(alert._id);
+      emitSosUpdate(req.app, populated);
+      await recordAdminAudit({
+        adminUserId: getUserId(req),
+        action: "sos_broadcast_retried",
+        entityType: "SosAlert",
+        entityId: alert._id,
+        metadata: {
+          recipientCount: delivery.recipientCount,
+          broadcastStatus: delivery.broadcastStatus,
+        },
+      });
+
+      return res.status(200).json({
+        success: true,
+        message:
+          delivery.broadcastStatus === "Sent"
+            ? "Emergency alert sent"
+            : "Emergency inbox alert saved; push delivery was incomplete",
+        data: populated,
+        notification_delivery: {
+          success: true,
+          count: delivery.notificationCount,
+          recipient_count: delivery.recipientCount,
+        },
+        push_delivery: delivery.pushDelivery,
+      });
+    } catch (err) {
+      console.error("POST /api/sos/:id/broadcast error:", err);
+      await SosAlert.findByIdAndUpdate(req.params.id, {
+        $set: {
+          broadcast_status: "Failed",
+          broadcast_error: err.message,
+        },
+      }).catch(() => null);
+      return res.status(500).json({
+        success: false,
+        message: err.message,
+      });
+    }
+  },
+);
 
 // =========================
 // PUT /api/sos/:id
@@ -397,70 +739,136 @@ router.post("/emergency", async (req, res) => {
 //   "status": "Resolved"
 // }
 // =========================
-router.put("/:id", async (req, res) => {
-  try {
-    const allowed = {};
+router.put(
+  "/:id",
+  protect,
+  authorizeRoles(...SOS_RESPONDER_ROLES),
+  async (req, res) => {
+    try {
+      if (!isObjectId(req.params.id)) {
+        return res.status(400).json({
+          success: false,
+          message: "SOS alert id is invalid",
+        });
+      }
 
-    if (req.body.status) {
-      allowed.status = req.body.status;
+      if (req.body.status && req.body.status !== "Resolved") {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Use the approve or reject endpoint for review decisions; this endpoint only accepts Resolved",
+        });
+      }
+
+      const allowed = {};
+      if (req.body.message) allowed.message = req.body.message;
+      if (req.body.priority) allowed.priority = req.body.priority;
+
+      let updated;
+      if (req.body.status === "Resolved") {
+        updated = await SosAlert.findOneAndUpdate(
+          {
+            _id: req.params.id,
+            status: { $in: RESOLVABLE_SOS_STATUSES },
+          },
+          {
+            $set: {
+              ...allowed,
+              status: "Resolved",
+              resolved_at: new Date(),
+              resolved_by: getUserId(req),
+            },
+          },
+          { new: true, runValidators: true },
+        );
+
+        if (!updated) {
+          const existing = await getPopulatedSos(req.params.id);
+          if (!existing) {
+            return res.status(404).json({
+              success: false,
+              message: "SOS alert not found",
+            });
+          }
+          if (existing.status === "Resolved") {
+            return res.status(200).json({
+              success: true,
+              already_resolved: true,
+              message: "SOS alert was already resolved",
+              data: existing,
+            });
+          }
+          return res.status(409).json({
+            success: false,
+            message: `Approve the SOS before resolving it; current status is ${existing.status}`,
+            data: existing,
+          });
+        }
+      } else {
+        if (!Object.keys(allowed).length) {
+          return res.status(400).json({
+            success: false,
+            message: "message, priority or status is required",
+          });
+        }
+        updated = await SosAlert.findByIdAndUpdate(
+          req.params.id,
+          { $set: allowed },
+          { new: true, runValidators: true },
+        );
+        if (!updated) {
+          return res.status(404).json({
+            success: false,
+            message: "SOS alert not found",
+          });
+        }
+      }
+
+      const populated = await getPopulatedSos(updated._id);
+      emitSosUpdate(req.app, populated);
 
       if (req.body.status === "Resolved") {
-        allowed.resolved_at = new Date();
+        await recordAdminAudit({
+          adminUserId: getUserId(req),
+          action: "sos_resolved",
+          entityType: "SosAlert",
+          entityId: updated._id,
+          metadata: {
+            source: updated.source,
+            approvedBy: updated.approved_by
+              ? String(updated.approved_by)
+              : null,
+          },
+        });
       }
-    }
 
-    if (req.body.resolved_at) {
-      allowed.resolved_at = req.body.resolved_at;
-    }
-
-    if (req.body.message) {
-      allowed.message = req.body.message;
-    }
-
-    if (req.body.priority) {
-      allowed.priority = req.body.priority;
-    }
-
-    const updated = await SosAlert.findByIdAndUpdate(req.params.id, allowed, {
-      new: true,
-      runValidators: true,
-    })
-      .populate("resident_id", "fullname email phone role")
-      .populate("room_id");
-
-    if (!updated) {
-      return res.status(404).json({
+      return res.json({
+        success: true,
+        message:
+          req.body.status === "Resolved"
+            ? "SOS alert resolved"
+            : "SOS alert updated successfully",
+        data: populated,
+      });
+    } catch (err) {
+      console.error("PUT /api/sos/:id error:", err);
+      return res.status(500).json({
         success: false,
-        message: "SOS alert not found",
+        message: err.message,
       });
     }
-
-    const io = req.app.get("io");
-
-    if (io) {
-      io.emit("sos_alert_updated", updated);
-      io.emit("admin_sos_alert_updated", updated);
-    }
-
-    res.json({
-      success: true,
-      message: "SOS alert updated successfully",
-      data: updated,
-    });
-  } catch (err) {
-    console.error("PUT /api/sos/:id error:", err);
-    res.status(500).json({
-      success: false,
-      message: err.message,
-    });
-  }
-});
+  },
+);
 
 // =========================
 // DELETE /api/sos/:id
 // Delete SOS alert
 // =========================
-router.delete("/:id", async (req, res) => {
+router.delete(
+  "/:id",
+  protect,
+  authorizeRoles("Admin"),
+  async (req, res) => {
   try {
     const deleted = await SosAlert.findByIdAndDelete(req.params.id);
 
@@ -479,17 +887,18 @@ router.delete("/:id", async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: "SOS alert deleted successfully",
     });
   } catch (err) {
     console.error("DELETE /api/sos/:id error:", err);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: err.message,
     });
   }
-});
+  },
+);
 
 module.exports = router;

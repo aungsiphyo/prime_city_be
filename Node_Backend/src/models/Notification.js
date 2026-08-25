@@ -18,6 +18,12 @@ const NotificationSchema = new mongoose.Schema({
     required: true,
   },
   data: { type: mongoose.Schema.Types.Mixed, default: {} },
+  dedupe_key: {
+    type: String,
+    trim: true,
+    unique: true,
+    sparse: true,
+  },
   is_read: { type: Boolean, default: false },
   action_status: {
     type: String,
