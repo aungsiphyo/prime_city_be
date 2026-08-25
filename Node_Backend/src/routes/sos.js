@@ -6,6 +6,7 @@ const User = require("../models/User");
 const Room = require("../models/Room");
 const Notification = require("../models/Notification");
 const optionalAuth = require("../middleware/optionalAuthMiddleware");
+const { canSendSosWithoutRoom } = require("../utils/sosPolicy");
 const { sendPushToUser, sendPushToUsers } = require("../services/push.service");
 
 function getUserId(req) {
@@ -193,7 +194,7 @@ router.post("/", optionalAuth, async (req, res) => {
 
     if (currentUserId) {
       currentUser = await User.findById(currentUserId)
-        .select("_id room_id")
+        .select("_id room_id role")
         .lean();
 
       if (!currentUser) {
@@ -225,8 +226,9 @@ router.post("/", optionalAuth, async (req, res) => {
     const resolvedRoom = await resolveRoomReference(room_id, resident_id);
     room_id = resolvedRoom.roomId;
     const roomLabel = resolvedRoom.roomLabel;
+    const roomIsOptional = canSendSosWithoutRoom(currentUser?.role);
 
-    if (!roomLabel) {
+    if (!roomLabel && !roomIsOptional) {
       return res.status(400).json({
         success: false,
         message: "A room location is required to send SOS",
