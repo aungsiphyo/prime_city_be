@@ -42,8 +42,65 @@ const SosAlertSchema = new mongoose.Schema({
 
   status: {
     type: String,
-    enum: ["Pending", "In Progress", "Resolved", "Rejected", "SOS_ACTIVE"],
+    enum: [
+      "Pending",
+      "Approved",
+      "In Progress",
+      "Resolved",
+      "Rejected",
+      "SOS_ACTIVE",
+      "Active",
+    ],
     default: "Pending",
+  },
+
+  approved_at: {
+    type: Date,
+  },
+
+  approved_by: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
+
+  rejected_at: {
+    type: Date,
+  },
+
+  rejected_by: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
+
+  rejection_reason: {
+    type: String,
+    trim: true,
+  },
+
+  broadcast_status: {
+    type: String,
+    enum: ["Not Sent", "Processing", "Sent", "Partial", "Failed"],
+    default: "Not Sent",
+  },
+
+  broadcasted_at: {
+    type: Date,
+  },
+
+  broadcast_recipient_count: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+
+  push_delivery: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null,
+  },
+
+  broadcast_error: {
+    type: String,
+    trim: true,
   },
 
   created_at: {
@@ -59,6 +116,13 @@ const SosAlertSchema = new mongoose.Schema({
   resolved_at: {
     type: Date,
   },
+
+  resolved_by: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
 });
+
+SosAlertSchema.index({ status: 1, created_at: -1 });
 
 module.exports = mongoose.model("SosAlert", SosAlertSchema);

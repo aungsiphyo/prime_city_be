@@ -147,9 +147,9 @@ function setupMQTT(io) {
           .populate("room_id")
           .lean();
 
-        io.emit("sos_alert", populatedAlert);
-        io.emit("sos_alert_created", populatedAlert);
-        io.emit("admin_sos_alert", populatedAlert);
+        io.to("sos_responders").emit("sos_alert", populatedAlert);
+        io.to("sos_responders").emit("sos_alert_created", populatedAlert);
+        io.to("sos_responders").emit("admin_sos_alert", populatedAlert);
       }
 
       if (topic === TOPICS.parkingUpdate) {
